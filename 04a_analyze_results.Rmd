@@ -1,0 +1,137 @@
+---
+title: "Primary Production model output"
+output: flexdashboard::flex_dashboard
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "04_analysis", output_file = paste0("PP_BIO_8day_2018185_alphab-pmb-variable_uniform-profile_", format(Sys.Date(), "%Y%m%d"))) })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, error=FALSE)
+```
+
+
+```{r prelim, warning=FALSE, message=FALSE, echo=FALSE}
+library(raster)
+library(gridExtra)
+library(oceancolouR)
+
+# input filename (.rda extension, NOT .nc, not including path)
+filename <- "BIO_NWA_8day_2018185_alphab-pmb-variable_uniform-profile_47-55N_-53--43W.rda"
+
+# variables to print below
+method <- "BIO"
+year <- 2018
+month <- 7
+week <- 1
+doy <- 185
+interval <- "8day"            # 8day or monthly
+uniform_profile <- TRUE       # chla profile
+gauss <- TRUE                 # if nonuniform chla profile, was the file processed using a shifted gaussian chla profile?
+use_constant_alphab <- FALSE  # same alphaB value used for every pixel?
+use_constant_pmb <- FALSE     # same pmb value used for every pixel?
+alphab_method <- "predefined" # if same alphab used for all pixels, was it predefined (=1), or the mean or median of the region?
+pmb_method <- "predefined"    # if same pmb used for all pixels, was it predefined (=1.69), or the mean or median of the region?
+lat_bounds <- c(47,55)
+lon_bounds <- c(-53,-43)
+
+# variables to plot (excluding PP, which is plotted automatically)
+input_variables <- list("Bathymetry"="bathy", "Chlorophyll-a"="chl", "SST"="sst", "PAR"="par", "Cloud fraction"="tcc")
+LUT_variables <- list("alphaB"="alphab", "PmB"="pmb")
+calculated_variables <- list("PAR"="PAR_BIO", "Spectral irradiance"="XX_BIO", "Euphotic depth"="EuphoD_BIO", "Yellow substances"="yelsub_BIO")
+
+load(file.path("03_PP_output", interval, filename))
+
+```
+
+# Details
+
+|                       |     |
+|-----------------------|-----|
+| **Model**             | `r method`  |
+| **Year**              | `r year`  |
+| **Month**             | `r month`  |
+| **Month week**        | `r week`  |
+| **Day of year**       | `r doy`  |
+| **Composite**         | `r interval`  |
+| **Latitude bounds**   | `r paste0(lat_bounds[1], " to ", lat_bounds[2], " N")`  |
+| **Longitude bounds**  | `r paste0(lon_bounds[1], " to ", lon_bounds[2], " W")`  |
+| **Chla profile**      | `r ifelse(uniform_profile, "uniform", ifelse(gauss, "Gaussian", "Interpolated"))`  |
+| **AlphaB**            | `r ifelse(use_constant_alphab, alphab_method, "variable")`  |
+| **PmB**               | `r ifelse(use_constant_pmb, pmb_method, "variable")`  |
+
+
+<br>
+
+**PI curve parameters**:  
+For *alphaB* (initial slope of the PI curve) and *PmB* (maximum photosynthetic rate), "variable" means that the value varies from pixel to pixel based on a look-up table. "Predefined" means *alphaB*=1 and *PmB*=1.69 (the same values used in the Laval model) for every pixel. "Mean" or "median" indicates that the same value is used for every pixel, calculated as the mean/median of the *alphaB* or *PmB* values from the look-up table (within the selected latitude/longitude boundaries of the image).  
+
+**Intermediate variables**:  
+*PAR*, *Spectral irradiance*, and *Yellow substances* have been integrated over depth and time, and *Euphotic depth* has been integrated over time.  
+
+
+
+# Rasters
+
+Column {data-width=400}
+-------------------------------------
+
+### Input variables
+
+```{r, fig.width=3, fig.height=10}
+rast_list <- list()
+for (i in 1:length(input_variables)) {
+    tmp_rast <- var_to_rast(df = data.frame(bin=rda_output$bin, var=rda_output[,input_variables[[i]]], stringsAsFactors = FALSE),
+                            ext = c(lon_bounds, lat_bounds))
+    rast_list[[names(input_variables)[i]]] <- spplot(tmp_rast,
+                                                     ylab=names(input_variables)[i],
+                                                     par.settings=list(layout.heights=list(top.padding=0, axis.xlab.padding=0, key.sub.padding=0, bottom.padding=0)))
+}
+grid.arrange(grobs=rast_list, nrow=length(input_variables), heights=rep(1,length(input_variables)))
+```
+
+
+Column {data-width=400}
+-------------------------------------
+
+### PI curve parameters (look-up table)
+
+```{r, fig.width=5, fig.height=3}
+rast_list <- list()
+for (i in 1:length(LUT_variables)) {
+    tmp_rast <- var_to_rast(df = data.frame(bin=rda_output$bin, var=rda_output[,LUT_variables[[i]]], stringsAsFactors = FALSE),
+                            ext = c(lon_bounds, lat_bounds))
+    rast_list[[names(LUT_variables)[i]]] <- spplot(tmp_rast,
+                                                   main=names(LUT_variables)[i],
+                                                   par.settings=list(layout.heights=list(top.padding=0, axis.xlab.padding=0, key.sub.padding=0, bottom.padding=0)))
+}
+grid.arrange(grobs=rast_list, ncol=length(LUT_variables), widths=c(11,10))
+```
+
+
+### Primary production
+
+```{r, fig.width=4, fig.height=4}
+tmp_rast <- var_to_rast(df = data.frame(bin=rda_output$bin, var=rda_output$PP_BIO, stringsAsFactors = FALSE),
+                        ext = c(lon_bounds, lat_bounds))
+spplot(tmp_rast, main="Primary production", par.settings=list(layout.heights=list(top.padding=0, axis.xlab.padding=0, key.sub.padding=0, bottom.padding=0)))
+```
+
+
+Column {data-width=400}
+-------------------------------------
+
+### Intermediate variables
+
+```{r, fig.width=3, fig.height=9}
+rast_list <- list()
+for (i in 1:length(calculated_variables)) {
+    tmp_rast <- var_to_rast(df = data.frame(bin=rda_output$bin, var=rda_output[,calculated_variables[[i]]], stringsAsFactors = FALSE),
+                            ext = c(lon_bounds, lat_bounds))
+    rast_list[[names(calculated_variables)[i]]] <- spplot(tmp_rast,
+                                                          ylab=names(calculated_variables)[i],
+                                                          par.settings=list(layout.heights=list(top.padding=0, axis.xlab.padding=0, key.sub.padding=0, bottom.padding=0)))
+}
+grid.arrange(grobs=rast_list, nrow=length(calculated_variables), heights=rep(1, length(calculated_variables)))
+```
+
+
