@@ -2,6 +2,7 @@ library(dplyr)
 library(data.table)
 library(oceancolouR)
 library(ncdf4)
+library(stringr)
 source("02b_get_param.R") # to get profile and PI curve parameters
 
 
@@ -102,7 +103,7 @@ output_name_end <- paste0(interval, "_NWA_", sensor, "_created",Sys.Date())
 #   MODIS TCC: YYYY-MM-DD, not accounting for leap years
 mvec <- as.numeric(sapply(1:46,function(i) format(as.Date((8*0:45)[i],origin=paste0("2001-01-01")),"%m")))
 dvec <- sapply(1:46,function(i) format(as.Date((8*0:45)[i],origin=paste0("2001-01-01")),"%d"))
-jvec <- sapply(8*(0:45)+1, pad_num, len=3)
+jvec <- sapply(8*(0:45)+1, str_pad, width=3, side="left", pad="0")
 
 
 #-----------------------------
@@ -142,8 +143,8 @@ for (y in y_list) {
             # get tcc filename and check if it exists
             # NOTE: tcc filenames use YYYYMMDD, but are not affected by leap years
             tcc_file <- ifelse(interval=="8day",
-                               paste0("01b_formatted_TCC/", interval, "/MYDAL2_E_CLD_FR_",y,"-",pad_num(m,2),"-",day,".csv"),
-                               paste0("01b_formatted_TCC/", interval, "/MYDAL2_M_CLD_FR_",y,"-",pad_num(m,2),".csv"))
+                               paste0("01b_formatted_TCC/", interval, "/MYDAL2_E_CLD_FR_",y,"-",str_pad(m,width=2,side="left",pad="0"),"-",day,".csv"),
+                               paste0("01b_formatted_TCC/", interval, "/MYDAL2_M_CLD_FR_",y,"-",str_pad(m,width=2,side="left",pad="0"),".csv"))
             
             if (!file.exists(tcc_file)) {next}
             
@@ -227,7 +228,7 @@ for (y in y_list) {
             #-------------------------------------------------------------------
             # FORMAT AND WRITE OUTPUT TO .CSV FILE
             
-            datestr <- ifelse(interval=="8day", paste0(y, doy), paste0(y, pad_num(m,2)))
+            datestr <- ifelse(interval=="8day", paste0(y, doy), paste0(y, str_pad(m,width=2,side="left",pad="0")))
             
             cat(paste0("Writing output for ", datestr, "...\n"))
             

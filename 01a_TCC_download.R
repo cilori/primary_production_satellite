@@ -15,7 +15,7 @@
 # to the next loop without waiting for it to finish, and starts a new one, so
 # they're running simultaneously.
 
-library(oceancolouR)
+library(stringr)
 
 years <- 2018
 months <- 1:12
@@ -40,10 +40,10 @@ dvec <- as.numeric(sapply(1:46,function(i) format(as.Date((8*0:45)[i],origin=pas
 for (y in years) {
     filename_list <- c()
     for (m in months) {
-        mname <- pad_num(m,2)
+        mname <- str_pad(m,width=2,side="left",pad="0")
         if (interval=="8day") {
             days <- dvec[mvec %in% m]
-            days <- sapply(1:length(days),function(i) pad_num(days[i],2))
+            days <- sapply(1:length(days),function(i) str_pad(days[i],width=2,side="left",pad="0"))
             datelist <- paste0(y,"-",mname,"-",days)
             filename_list <- rbind(filename_list,cbind(paste0(baseurl,"MYDAL2_E_CLD_FR/MYDAL2_E_CLD_FR_",datelist,".PNG")))
         } else if (interval=="monthly") {

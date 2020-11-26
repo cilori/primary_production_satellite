@@ -44,6 +44,7 @@ library(data.table)     # for reading large csv input files with fast "fread" fu
 library(dplyr)          # for organizing input and output
 library(oceancolouR)    # for various custom functions
 library(pbapply)        # for progress bars
+library(stringr)
 
 source("PP_BIO/bird.R")
 source("PP_BIO/sam_penguin.R")
@@ -113,7 +114,7 @@ data("nwa_bins_4km")
 
 # For 8day interval
 mvec <- as.numeric(sapply(1:46,function(i) format(as.Date((8*0:45)[i],origin=paste0("2001-01-01")),"%m")))
-jvec <- sapply(1:46,function(i) pad_num(((8*0:45)+1)[i],3))
+jvec <- sapply(1:46,function(i) str_pad(((8*0:45)+1)[i],width=3,side="left",pad="0"))
 
 # Path of input formatted csv files
 input_path <- paste0("02_PP_input/", interval, "/")
@@ -136,8 +137,8 @@ for (y in y_list) {
         # month, based on choice of 8day or monthly composites.
         if (interval=="monthly") {
             # First day of the month
-            jvec_sub <- as.numeric(format(as.Date(paste0(y,pad_num(m,2),"01"),format="%Y%m%d"),"%j"))
-            input_datestrs <- paste0(y,pad_num(m,2))
+            jvec_sub <- as.numeric(format(as.Date(paste0(y,str_pad(m,width=2,side="left",pad="0"),"01"),format="%Y%m%d"),"%j"))
+            input_datestrs <- paste0(y,str_pad(m,width=2,side="left",pad="0"))
         } else if (interval=="8day") {
             # First day of each 8day interval
             jvec_sub <- jvec[mvec %in% m]

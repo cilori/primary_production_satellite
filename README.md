@@ -75,7 +75,7 @@ Note that the *bird* and *sam_penguin* functions in the BIO model have been conv
 ### STEP 4: Examine output
 
 Examine the images in Rmarkdown summary files. You can also compare them to other models, such as the VGPM model, found here:  
-`http://orca.science.oregonstate.edu/1080.by.2160.monthly.hdf.vgpm.v.chl.v.sst.php`  
+`http://orca.science.oregonstate.edu/2160.by.4320.8day.hdf.vgpm.v.chl.v.sst.php `  
 
 
 --------------------------------------------------------------------------------
@@ -115,7 +115,7 @@ Brief summary of the steps in the PP calculation in *model_BIO.R*:
     a. "bird" function: Calculate direct and diffuse components of surface irradiance for all the wavelengths  
     b. Correct for seasonal variation and cloud cover  
 4. Scale/correct irradiance based on satellite PAR  
-5. Loop over time intervals/zenith angles. At each iteraton:  
+5. Loop over time intervals/zenith angles. At each iteration:  
     a. Calculate reflection losses at air-sea interface  
     b. Convert values to get the right units for sam_penguin  
     c. "sam_penguin" function: Calculate subsurface irradiance down to euphotic depth (wavelength integration happens in here)  
