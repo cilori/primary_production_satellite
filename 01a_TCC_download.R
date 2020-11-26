@@ -43,7 +43,7 @@ for (y in years) {
         mname <- str_pad(m,width=2,side="left",pad="0")
         if (interval=="8day") {
             days <- dvec[mvec %in% m]
-            days <- sapply(1:length(days),function(i) str_pad(days[i],width=2,side="left",pad="0"))
+            days <- str_pad(days,width=2,side="left",pad="0")
             datelist <- paste0(y,"-",mname,"-",days)
             filename_list <- rbind(filename_list,cbind(paste0(baseurl,"MYDAL2_E_CLD_FR/MYDAL2_E_CLD_FR_",datelist,".PNG")))
         } else if (interval=="monthly") {

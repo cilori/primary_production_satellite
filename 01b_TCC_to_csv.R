@@ -27,7 +27,7 @@ if (interval=="8day") {
     dates <- dates[mvec %in% months]
 } else if (interval=="monthly") {
     name1 <- "MYDAL2_M_CLD_FR_"
-    dates <- paste0(year,"-",sapply(months,function(i) str_pad(i,width=2,side="left",pad="0")))
+    dates <- paste0(year,"-",str_pad(months,width=2,side="left",pad="0"))
 }
 
 bins.rl <- gen_bin_grid(gen_start_bin())

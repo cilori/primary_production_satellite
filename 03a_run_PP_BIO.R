@@ -114,7 +114,7 @@ data("nwa_bins_4km")
 
 # For 8day interval
 mvec <- as.numeric(sapply(1:46,function(i) format(as.Date((8*0:45)[i],origin=paste0("2001-01-01")),"%m")))
-jvec <- sapply(1:46,function(i) str_pad(((8*0:45)+1)[i],width=3,side="left",pad="0"))
+jvec <- str_pad(((8*0:45)+1),width=3,side="left",pad="0")
 
 # Path of input formatted csv files
 input_path <- paste0("02_PP_input/", interval, "/")

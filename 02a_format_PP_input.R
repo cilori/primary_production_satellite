@@ -103,7 +103,7 @@ output_name_end <- paste0(interval, "_NWA_", sensor, "_created",Sys.Date())
 #   MODIS TCC: YYYY-MM-DD, not accounting for leap years
 mvec <- as.numeric(sapply(1:46,function(i) format(as.Date((8*0:45)[i],origin=paste0("2001-01-01")),"%m")))
 dvec <- sapply(1:46,function(i) format(as.Date((8*0:45)[i],origin=paste0("2001-01-01")),"%d"))
-jvec <- sapply(8*(0:45)+1, str_pad, width=3, side="left", pad="0")
+jvec <- str_pad(8*(0:45)+1, width=3, side="left", pad="0")
 
 
 #-----------------------------
