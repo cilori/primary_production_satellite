@@ -1,0 +1,137 @@
+---
+title: "Primary Production model comparisons"
+output: flexdashboard::flex_dashboard
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "04_analysis", output_file = paste0("PP_BIO-VGPM_comparison_8day_2018185_alphab-variable-pmb-constant_uniform-profile_", format(Sys.Date(), "%Y%m%d"))) })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, error=FALSE)
+```
+
+
+```{r prelim, echo=FALSE, warning=FALSE, message=FALSE}
+library(raster)
+library(ggplot2)
+library(gridExtra)
+library(oceancolouR)
+library(ncdf4)
+library(stringr)
+
+vgpm_file <- "PP_VGPM/8day_2160x4320/vgpm.2012185.hdf"
+bio_file <- "03_PP_output/8day/BIO_NWA_8day_2018185_alphab-pmb-variable_uniform-profile_47-55N_-53--43W.nc"
+
+
+# variables to print below
+method <- "BIO"
+year <- 2018
+month <- 7
+week <- 1
+doy <- 185
+interval <- "8day"            # 8day or monthly
+uniform_profile <- TRUE       # chla profile
+gauss <- TRUE                 # if nonuniform chla profile, was the file processed using a shifted gaussian chla profile?
+use_constant_alphab <- FALSE  # same alphaB value used for every pixel?
+use_constant_pmb <- FALSE     # same pmb value used for every pixel?
+alphab_method <- "predefined" # if same alphab used for all pixels, was it predefined (=1), or the mean or median of the region?
+pmb_method <- "predefined"    # if same pmb used for all pixels, was it predefined (=1.69), or the mean or median of the region?
+lat_bounds <- c(47,55)
+lon_bounds <- c(-53,-43)
+```
+
+
+# Details
+
+This is a comparison of the BIO primary production model to Standard VGPM from VIIRS data, using uniform biomass profiles.  
+
+8day VGPM PP images: http://orca.science.oregonstate.edu/2160.by.4320.8day.hdf.vgpm.v.chl.v.sst.php  
+
+Color scales: mean +- 2 standard deviations  
+
+% Difference = 100 * (BIO - VGPM) / VGPM  
+
+Possible sources of discrepancies between the two, aside from the model:  
+
+  - BIO uses different alphaB / PmB for each pixel, based on a look-up table that takes year/day and satellite CHL and SST as input and uses nearest statistical distance and yaImpute package to get the closest in situ CHL/SST and their corresponding PI curve parameters  
+  - Different CHL / SST / PAR / TCC input?  
+  - BIO does not fill gaps  
+
+
+### BIO model/image details:  
+
+|                       |     |
+|-----------------------|-----|
+| **Year**              | `r year`  |
+| **Month**             | `r month`  |
+| **Month week**        | `r week`  |
+| **Day of year**       | `r doy`  |
+| **Composite**         | `r interval`  |
+| **Latitude bounds**   | `r paste0(lat_bounds[1], " to ", lat_bounds[2], " N")`  |
+| **Longitude bounds**  | `r paste0(lon_bounds[1], " to ", lon_bounds[2], " W")`  |
+| **Chla profile**      | `r ifelse(uniform_profile, "uniform", ifelse(gauss, "Gaussian", "Interpolated"))`  |
+| **AlphaB**            | `r ifelse(use_constant_alphab, alphab_method, "variable")`  |
+| **PmB**               | `r ifelse(use_constant_pmb, pmb_method, "variable")`  |
+
+
+### VGPM model details (from their website):  
+    
+http://sites.science.oregonstate.edu/ocean.productivity/vgpm.model.php  
+--> "MODEL DESCRIPTIONS"  
+--> "VGPM"  
+
+
+# Rasters
+
+```{r plots, echo=FALSE, results='asis', fig.align='center', fig.width=10}
+
+vgpm_rast <- raster(vgpm_file)
+
+data("nwa_bins_4km")
+bio_nc <- nc_open(bio_file)
+bio_pp <- ncvar_get(bio_nc, "PP")
+nc_close(bio_nc)
+bio_rast <- var_to_rast(df=data.frame(bin=nwa_bins_4km, pp=bio_pp), ext=c(lon_bounds, lat_bounds))
+
+crs(vgpm_rast) <- crs(bio_rast)
+extent(vgpm_rast) <- extent(c(xmin=-180,xmax=180,ymin=-90,ymax=90))
+
+vgpm_rast <- crop(vgpm_rast, extent(bio_rast))
+vgpm_rast[vgpm_rast < 0] <- NA
+
+# https://www.neonscience.org/dc-raster-calculations-r
+# For raster math, make sure the rasters have the same CRS, resolution, and defined minimum and maximum values
+vgpm_rast <- resample(vgpm_rast, bio_rast)
+
+names(vgpm_rast) <- "VGPM"
+names(bio_rast) <- toupper(method)
+
+# Adjust the range of the color scale to +- 2 standard deviations
+vgpm_vec <- as.numeric(as.vector(vgpm_rast))
+bio_vec <- as.numeric(as.vector(bio_rast))
+full_vec <- c(vgpm_vec,bio_vec)
+full_range <- c(mean(full_vec,na.rm=T) - 2*sd(full_vec,na.rm=T),
+                mean(full_vec,na.rm=T) + 2*sd(full_vec,na.rm=T))
+
+# Make a raster of the difference between them, on a separate color scale
+diff_rast <- ((bio_rast - vgpm_rast)/vgpm_rast) * 100
+names(diff_rast) <- "% Difference"
+diff_vec <- as.numeric(as.vector(diff_rast))
+diff_range <- c(mean(diff_vec,na.rm=T) - 2*sd(diff_vec,na.rm=T),
+                mean(diff_vec,na.rm=T) + 2*sd(diff_vec,na.rm=T))
+# Remove outliers for map color scale
+diff_rast[diff_rast < diff_range[1] | diff_rast > diff_range[2]] <- NA
+
+h <- ggplot(data.frame(Difference=diff_vec, stringsAsFactors = FALSE), aes(Difference)) +
+     geom_density(fill="grey") +
+     ylab("Density") +
+     xlab(expression(paste('% difference in primary production'))) +
+     theme_bw() +
+     theme(legend.position="none")
+
+grid.arrange(spplot(stack(vgpm_rast, bio_rast), zlim=full_range),
+             spplot(diff_rast, zlim=diff_range, main="% Difference"),
+             ncol=2, widths=c(5,3))
+
+suppressWarnings(print(h))
+
+```
