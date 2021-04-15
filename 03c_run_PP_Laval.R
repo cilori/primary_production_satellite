@@ -230,9 +230,6 @@ for (y in y_list) {
             
             
             
-            
-            
-            stop()
             #*******************************************************************
             # CALCULATE PP FOR EACH VALID INDEX
             
