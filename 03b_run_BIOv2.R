@@ -1,18 +1,30 @@
 
 source("03b_BIOv2_model.R")
 source("R/PAR_resolved.R")
+library(oceancolouR)
 
 #*******************************************************************************
+
+# PRIMARY PRODUCTION BIO MODEL VERSION 2
+
+# Step 1: calculate surface irradiance (use Gregg-Carder model)
+# Step 2: get chl profile
+# Step 3: calculate irradiance in the water column
+# Step 4: calculate PP
+# Step 5: integrate
+
+
+
 # COMMENTS
 
-# Underwater field as a function on Chl 
-# For now, homogeneous profile, we can make it more complicated later
-
+# In 03b_run_BIOv2.R
+    # Underwater field as a function on Chl 
+    # For now, homogeneous profile, we can make it more complicated later
 
 # In PAR_resolved.R
-    ##### PERHAPS WE SHOULD KEEP DIRECT AND DIFFUSE ALL ALONG
+    # PERHAPS WE SHOULD KEEP DIRECT AND DIFFUSE ALL ALONG
 
-# In model_BIO_v2.R
+# In 03b_BIOv2_model.R
     # CHECK/UPDATE:
     # - for phytoplankton absorption we used the model from Devred et al. 2006 !!! THIS NEED TO BE UPDATED
     #       AC = pc1*(1-exp(-rate*chlz) + pc2*chlz with:
@@ -26,40 +38,76 @@ source("R/PAR_resolved.R")
 
 #*******************************************************************************
 
-# profvis::profvis({
-ptm <- Sys.time()
-
-# GET PAR
+# VARIABLES FOR SURFACE PAR, UNDERWATER IRRADIANCE, AND PP
 latipxl = 50.
 daypxl = 173
 yearpxl = 2018
+
+# VARIABLES FOR UNDERWATER IRRADIANCE AND PP
+chlpix = 8
+alphaB = 0.033 * 1000 # those have to be defined before in mg C (mg chl m-3)-1 s-1
+PBm = 2.5 # Those have to be defined before
+
+
+#*******************************************************************************
+# GET SURFACE PAR
+
+
+ptm <- Sys.time()
+
 presolved <- PAR_resolved(latipxl = latipxl,
                           daypxl = daypxl,
                           yearpxl = yearpxl)
 Eqdifw <- presolved$Eqdifw
 Eqdirw <- presolved$Eqdirw
 Eqdw <- presolved$Eqdw
+zendR <- presolved$zendR
+zendw <- presolved$zendw
+i <- 23#presolved$i
 
-# GET PP
-chlpix = 8
-alphaB = 0.033 * 1000 # those have to be defined before in mg C (mg chl m-3)-1 s-1
-PBm = 2.5 # Those have to be defined before
+print(Sys.time() - ptm)
+
+
+#*******************************************************************************
+# GET UNDERWATER IRRADIANCE AND PP
+
+ptm <- Sys.time()
+# for (itest in 1:5) {
+
 result <- pp_BIO_v2(chlpix = chlpix,
                     alphaB = alphaB,
                     PBm = PBm,
                     Eqdifw = Eqdifw,
                     Eqdirw = Eqdirw,
-                    Eqdw = Eqdw)
+                    Eqdw = Eqdw,
+                    zendR = zendR,
+                    zendw = zendw,
+                    asw = asw)
 
-# })
+# }
 print(Sys.time() - ptm)
 
 
-
+#*******************************************************************************
+# PRINT RESULTS
 
 PP <- result$PP
-
 print(PP)
+
+image.plot(result$xhr, result$Z[1:101], result$PPgrid[,101:1],
+           xlab = "Time (h)", ylab = "depth (m)",axes = F)
+axis(1)
+axis(2,at = seq(0,50,5),labels = seq(50,0,-5))
+box()
+
+
+#*******************************************************************************
+
+
+
+
+
+
 
 
 

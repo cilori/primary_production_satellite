@@ -63,9 +63,11 @@ comp_sco3 <- function(ylat,xlon,jday,ro3) {
   rlat <- ylat/rad
   rlon <- xlon/rad
   to3 <- 235.0 + (150.0+40.0*sin(0.9865*(jday-30.0)) + 20.0*sin(3.0*(rlon)))*sin(1.28*rlat)*sin(1.28*rlat)
-  if (ro3 > 0) {to3 <- ro3} else
-  {to3 = 235.0 + (150.0+40.0*sin(0.9865*(jday-30.0)) + 
-  20.0*sin(3.0*(rlon)))*sin(1.28*rlat)*sin(1.28*rlat)}
+  if (ro3 > 0) {
+    to3 <- ro3
+  } else {
+    to3 = 235.0 + (150.0+40.0*sin(0.9865*(jday-30.0)) + 20.0*sin(3.0*(rlon)))*sin(1.28*rlat)*sin(1.28*rlat)
+  }
   sco3 = to3*1e-3
   return(sco3)
 }

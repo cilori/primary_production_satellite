@@ -128,7 +128,7 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl) {
             # planar to scalar
             Eqdirw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edir[51:351]/cos(zendw[i]),
                                                               lambda = lam[51:351])
-            #We divide the iffuse irradiance by 0.833 to convert from 
+            #We divide the diffuse irradiance by 0.833 to convert from 
             # planar to scalar, as in Platt and Sathyendranath 1997, page 2624 last paragraph
             Eqdifw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edif[51:351]/0.83,
                                                               lambda = lam[51:351])
@@ -150,6 +150,6 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl) {
     Eqdifw = Eqdifw * SatPAR / (sum(Ed)*3600/1000)
     Eqdw = Eqdirw + Eqdifw
     
-    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, Eqdw=Eqdw))
+    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, Eqdw=Eqdw, zendR=zendR, zendw=zendw, i=i))
     
 }

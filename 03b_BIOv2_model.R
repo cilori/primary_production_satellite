@@ -1,6 +1,19 @@
 
+#*******************************************************************************
+# DATA
+
+# Absorption:
+# Pure seawater is taken from Pope and Fry 1997
+awp <- read.table("data/pope97.dat",skip=6) # absorption of pure sea water according to Pope and Fry (1997)
+res <- approx(awp[,1],awp[,2],lambda) # asw is absorption by pure seawater at wavelengths of interest
+asw <- res$y
+
+
+#*******************************************************************************
+# FUNCTION
+
 # chlpix = numeric vector of chl in water column
-pp_BIO_v2 <- function(chlpix, alphaB, PBm, Eqdifw, Eqdirw, Eqdw) {
+pp_BIO_v2 <- function(chlpix, alphaB, PBm, Eqdifw, Eqdirw, Eqdw, zendR, zendw, asw) {
     
     dz = 0.5                   # Depth interval between computations (metres)
     Zmin = 0.0                 # Min depth, we have computed the light just under the water, so the next
@@ -9,12 +22,16 @@ pp_BIO_v2 <- function(chlpix, alphaB, PBm, Eqdifw, Eqdirw, Eqdw) {
     Z = seq(Zmin,Zmax,by=dz)   # Vector of depths
     Rsize = length(lambda)     # Number of wavelengths (400 to 700 nm, 5nm increments)
     nstep = length(Z)          # Length of depths vector, where dz=0.5m and Zmax=250m
+    xhr = 1:23                 # hours
     
     
-    
-    # temporary, before chl profile adjustments
-    if (length(chlpix)==1) chlpix <- rep(chlpix, nstep)
-
+    #***********************
+    # fix chl profile
+    if (length(chlpix)==1) {
+        chlpix <- rep(chlpix, nstep)
+    }
+    # # tmax = depth at max chla
+    # chlpix <- shifted_gaussian(tv=depths, B0=B0, beta=0, h=h, sigma=sigma, tmax=tmax)
     
     
     # Here is the table where we store the light at each depth (i.e., 50cm), hour and lambda
@@ -37,11 +54,6 @@ pp_BIO_v2 <- function(chlpix, alphaB, PBm, Eqdifw, Eqdirw, Eqdw) {
     BW500 = 0.00288
     BW = BW500*(lambda/500)^(-4.3)
     
-    # Absorption:
-    # Pure seawater is taken from Pope and Fry 1997
-    awp <- read.table("data/pope97.dat",skip=6) # absorption of pure sea water according to Pope and Fry (1997)
-    res <- approx(awp[,1],awp[,2],lambda) # asw is absorption by pure seawater at wavelengths of interest
-    asw <- res$y
     
     # for phytoplankton absorption we used the model from Devred et al. 2006 !!! THIS NEED TO BE UPDATED
     # AC = pc1*(1-exp(-rate*chlz) + pc2*chlz with:
@@ -96,7 +108,7 @@ pp_BIO_v2 <- function(chlpix, alphaB, PBm, Eqdifw, Eqdirw, Eqdw) {
                 at = asw + ays + aphy
                 
                 # Here we can start to compute attenuation at each depth for each wavelength
-                Kddir = (at + bbt) / cos(zendw[i])
+                Kddir = (at + bbt) / cos(zendw[it])
                 Kddif = (at + bbt) / 0.83
                 
                 E0dir[it,iz,] = E0dir[it,(iz-1),] * exp(-Kddir*0.5)
@@ -124,14 +136,9 @@ pp_BIO_v2 <- function(chlpix, alphaB, PBm, Eqdifw, Eqdirw, Eqdw) {
         
     } # end loop on time of day (xhr)
     
-    # image.plot(xhr, Z[1:101],PP[,101:1], xlab = "Time (h)", ylab = "depth (m)",axes = F)
-    # axis(1)
-    # axis(2,at = seq(0,50,5),labels = seq(50,0,-5))
-    # box()
-    
     # /2 because doing measurements every half metre
-    PP <- sum(PP)/2
+    finalPP <- sum(PP)/2
     
-    return(list(xhr=xhr, Z=Z, PP=PP))
+    return(list(xhr=xhr, Z=Z, PPgrid=PP, PP=finalPP))
     
 }
