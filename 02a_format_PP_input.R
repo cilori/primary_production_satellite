@@ -79,13 +79,13 @@ data("pancan_bins_4km")
 # number of warnings might indicate a data format problem.)
 
 # Reference parameters for nonuniform biomass profile
-bp_par <- read.csv("02a_LUT_cp-20141117.csv") %>%
+bp_par <- read.csv("data/02a_LUT_cp-20141117.csv") %>%
     mutate(dates=as.Date(paste0(year,"-",mon,"-",day))) %>%
     filter(chlsur>=0,!is.na(chlsur),!is.na(tempsur))#,
            #between(sigma,0,250),between(zm,-100,200),between(rho,0,1))
 
 # Reference parameters for PI curve
-pi_par <- read.csv("02a_LUT_pi-20141113.csv") %>%
+pi_par <- read.csv("data/02a_LUT_pi-20141113.csv") %>%
     mutate(dates = as.Date(paste0(year,"-",mon,"-",day)),
            dn = format(as.Date(dates,origin="1970-01-01"),"%j")) %>%
     filter(alpha >= 0, !is.na(pm), !is.na(alpha))#,
