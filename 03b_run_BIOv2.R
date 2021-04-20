@@ -1,7 +1,8 @@
 
 source("03b_BIOv2_model.R")
 source("R/PAR_resolved.R")
-library(oceancolouR)
+# library(oceancolouR) # for shifted_gaussian (chl profile)
+
 
 #*******************************************************************************
 
@@ -38,10 +39,11 @@ library(oceancolouR)
 
 #*******************************************************************************
 
-# VARIABLES FOR SURFACE PAR, UNDERWATER IRRADIANCE, AND PP
+# VARIABLES FOR SURFACE PAR
 latipxl = 50.
 daypxl = 173
 yearpxl = 2018
+SatPAR = 24
 
 # VARIABLES FOR UNDERWATER IRRADIANCE AND PP
 chlpix = 8
@@ -57,19 +59,20 @@ ptm <- Sys.time()
 
 presolved <- PAR_resolved(latipxl = latipxl,
                           daypxl = daypxl,
-                          yearpxl = yearpxl)
+                          yearpxl = yearpxl,
+                          SatPAR = SatPAR)
 Eqdifw <- presolved$Eqdifw
 Eqdirw <- presolved$Eqdirw
 Eqdw <- presolved$Eqdw
 zendR <- presolved$zendR
 zendw <- presolved$zendw
-i <- 23#presolved$i
 
 print(Sys.time() - ptm)
 
 
 #*******************************************************************************
 # GET UNDERWATER IRRADIANCE AND PP
+
 
 ptm <- Sys.time()
 # for (itest in 1:5) {

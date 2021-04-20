@@ -2,6 +2,9 @@
 #*******************************************************************************
 # DATA
 
+# We define lambda for the visible spectrum (i.e. PAR)
+lambda = 400:700
+
 # Absorption:
 # Pure seawater is taken from Pope and Fry 1997
 awp <- read.table("data/pope97.dat",skip=6) # absorption of pure sea water according to Pope and Fry (1997)
@@ -11,6 +14,11 @@ asw <- res$y
 
 #*******************************************************************************
 # FUNCTION
+
+# # test data (get remaining variables from PAR_resolved():
+# chlpix = 8
+# alphaB = 0.033 * 1000 # those have to be defined before in mg C (mg chl m-3)-1 s-1
+# PBm = 2.5 # Those have to be defined before
 
 # chlpix = numeric vector of chl in water column
 pp_BIO_v2 <- function(chlpix, alphaB, PBm, Eqdifw, Eqdirw, Eqdw, zendR, zendw, asw) {

@@ -26,11 +26,6 @@ latibin = seq(35,80,0.25) # x axis for PARday
 daybin = 1:365 # y axis for PARday 
 visibility = 10^seq(-1.6,1.8,,30) # z axis for PARday 
 
-# see above for year, day and latitude
-# Here we convert PAR from Einstein.m-2.d-1 back to mW.cm-2.microm-2
-# see seawifs tech report vol 22 page 49 
-SatPAR = 24/1.193 
-
 # We define lambda for the visible spectrum (i.e. PAR)
 lambda = 400:700
 # Atmospheric parameters
@@ -57,13 +52,24 @@ nw = 1.34 # refractive index of seawater
 #*******************************************************************************
 # FUNCTION
 
-PAR_resolved <- function(latipxl, daypxl, yearpxl) {
+# # test data:
+# latipxl = 50.
+# daypxl = 173
+# yearpxl = 2018
+# SatPAR = 24
+
+PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     
     # computer sun angle for day
     xhr = 1:23
     datepxl = doyday(yearpxl,daypxl) + hours(xhr)
     julianpxl = JD(doyday(yearpxl,daypxl))
     datepxl = str_replace(as.character(datepxl),"AST","UTC") # Here I put the date to U
+    
+    # Here we convert PAR from Einstein.m-2.d-1 back to mW.cm-2.microm-2
+    # see seawifs tech report vol 22 page 49 
+    # https://oceancolor.gsfc.nasa.gov/atbd/par/seawifs_par_wfigs.pdf
+    SatPAR = SatPAR/1.193 
     
     # Here we compute the sun zenith angle in degree, which is 90 - elevation
     zendR = 90 - sunAngle(datepxl,longitude = 0, latitude = latipxl)$altitude # Function from "oce" package
@@ -150,6 +156,6 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl) {
     Eqdifw = Eqdifw * SatPAR / (sum(Ed)*3600/1000)
     Eqdw = Eqdirw + Eqdifw
     
-    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, Eqdw=Eqdw, zendR=zendR, zendw=zendw, i=i))
+    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, Eqdw=Eqdw, zendR=zendR, zendw=zendw))
     
 }
