@@ -6,25 +6,17 @@
 #  of Gregg and Carder 1990.  This is the data of Table 1 in the L&O
 #  paper, with values added to extend the model to 800 nm.
 
-data_atm <- read.table("data/gcirrad.txt",skip=5)
-lam = rep(NaN,452)
-Fobar = lam
-oza = lam
-ag = lam
-aw = lam
-oidx = seq(1,452,2)
-eidx = seq(2,452,2)
+data_atm <- read.table("data/gcirrad.txt",skip=4,header=TRUE)
+# THIS GOES FROM 350-801NM, BUT WE'RE ONLY INTERESTED IN THESE INDICES: 51:351 (400-700nm)
 
-lam[oidx] <- data_atm[,1]
-lam[eidx] <- data_atm[,6]
-Fobar[oidx] <- data_atm[,2]*10
-Fobar[eidx] <- data_atm[,7]*10 #convert W/cm2/um to W/m2/nm
-oza[oidx] <- data_atm[,3]
-oza[eidx] <- data_atm[,8]
-ag[oidx] <- data_atm[,4]
-ag[eidx] <- data_atm[,9]
-aw[oidx] <- data_atm[,5]
-aw[eidx] <- data_atm[,10]
+inds <- 51:351
+len_inds <- length(inds)
+
+lam <- data_atm[inds,1]
+Fobar <- data_atm[inds,2]*10 #convert W/cm2/um to W/m2/nm
+oza <- data_atm[inds,3]
+ag <- data_atm[inds,4]
+aw <- data_atm[inds,5]
 
 
 #*******************************************************************************
@@ -37,7 +29,7 @@ mxwave=90
 mxnsky=10
 mxcomp=10
 mxnzvals=200
-nlt=452
+nlt=len_inds#???452
 
 #rh = 0.8  # humidity default value
 #am = 1 # aerosol model (1-10), 1 is default value (marine model)

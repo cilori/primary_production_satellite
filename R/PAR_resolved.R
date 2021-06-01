@@ -21,9 +21,9 @@ source("R/Watt_to_quanta.R")
 # derive Ed(lambda,0-) as we sill scale the visibility to match
 # model and satellite PAR, the variable is PARday
 load("data/LUT_PAR_lati_day_vis.Rdata")
-# These are the steps for the 
-latibin = seq(35,80,0.25) # x axis for PARday 
-daybin = 1:365 # y axis for PARday 
+# # These are the steps for the 
+# latibin = seq(35,80,0.25) # x axis for PARday 
+# daybin = 1:365 # y axis for PARday 
 visibility = 10^seq(-1.6,1.8,,30) # z axis for PARday 
 
 # We define lambda for the visible spectrum (i.e. PAR)
@@ -60,6 +60,12 @@ nw = 1.34 # refractive index of seawater
 
 PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     
+    
+    # profvis::profvis({
+        
+    
+    
+    
     # computer sun angle for day
     xhr = 1:23
     datepxl = doyday(yearpxl,daypxl) + hours(xhr)
@@ -92,24 +98,24 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     #Ed(0-, lambda)
     Edirw = matrix(0,23,301) # direct 
     Edifw = matrix(0,23,301) # diffus
-    Edw = matrix(0,23,301) # total in mW.m-2.nm-1
+    # Edw = matrix(0,23,301) # total in mW.m-2.nm-1
     
     #Eq(0+)
     Eqdir = matrix(0,23,301) # direct
     Eqdif = matrix(0,23,301) # diffus
-    Eqd = matrix(0,23,301) # total in Einstein.m-2
+    # Eqd = matrix(0,23,301) # total in Einstein.m-2
     
     # Eq(0-)
     Eqdirw = matrix(0,23,301) # direct
     Eqdifw = matrix(0,23,301) # diffus
-    Eqdw = matrix(0,23,301) # total in Einstein.m-2
+    # Eqdw = matrix(0,23,301) # total in Einstein.m-2
     
     zendw = rep(23,0)
     
     for (i in 1:23)
     {
         zendw[i] = asin( 1/nw * sin(zendR[i] / rad))
-        #    if (zendR[i] >= 90){PARhr[i] = 0}
+        
         if (zendR[i] < 90.)
         {
             
@@ -117,32 +123,32 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
             irr.gc = atmodd(iblw=0,rad = rad, lam = lam, theta = zendR[i], oza = oza, ag = ag, 
                             aw = aw, sco3 = sco3, p=p0, wv = wv, rh = rh, am = am, wsm = wsm,
                             ws = ws, vis = pxlvis, Fo = Fo)
-            Ed[i,] = irr.gc$Ed[51:351]
+            Ed[i,] = irr.gc$Ed#[51:351]
             
-            Eqdir[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irr.gc$Edir[51:351],
-                                                             lambda = lam[51:351])
-            Eqdif[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irr.gc$Edif[51:351],
-                                                             lambda = lam[51:351])
+            Eqdir[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irr.gc$Edir,
+                                                             lambda = lam)
+            Eqdif[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irr.gc$Edif,
+                                                             lambda = lam)
             # Under water spectral irradiance.
             irrm.gc = atmodd(iblw=1,rad = rad, lam = lam, theta = zendR[i], oza = oza, ag = ag, 
                              aw = aw, sco3 = sco3, p=p0, wv = wv, rh = rh, am = am, wsm = wsm,
                              ws = ws, vis = pxlvis, Fo = Fo)
-            Edirw[i,] = irrm.gc$Edir[51:351] #w.m-2.nm-1
-            Edifw[i,] = irrm.gc$Edif[51:351] #w.m-2.nm-1
+            Edirw[i,] = irrm.gc$Edir#[51:351] #w.m-2.nm-1
+            Edifw[i,] = irrm.gc$Edif#[51:351] #w.m-2.nm-1
             
             #We divide the direct irradiance by the in-water sun zenith angle to convert from 
             # planar to scalar
-            Eqdirw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edir[51:351]/cos(zendw[i]),
-                                                              lambda = lam[51:351])
+            Eqdirw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edir/cos(zendw[i]),
+                                                              lambda = lam)
             #We divide the diffuse irradiance by 0.833 to convert from 
             # planar to scalar, as in Platt and Sathyendranath 1997, page 2624 last paragraph
-            Eqdifw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edif[51:351]/0.83,
-                                                              lambda = lam[51:351])
+            Eqdifw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edif/0.83,
+                                                              lambda = lam)
             
         }
     }
     
-    Eqd = Eqdir + Eqdif
+    # Eqd = Eqdir + Eqdif
     
     # Now we use Ed and SatPar to scale Edw
     # Note that extraterrestrial solar irradiance in Gregg and Carder is in w.cm-2.microm and we want
@@ -150,12 +156,18 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     
     ScalingPARfactor = SatPAR / (sum(Ed)*36)
     
-    Eqd = Eqd *SatPAR /(sum(Ed)*3600/1000)
+    # Eqd = Eqd *SatPAR /(sum(Ed)*3600/1000)
     #Here we have the underwater light field in Ein.m-2 for a given hour.
     Eqdirw = Eqdirw * SatPAR / (sum(Ed)*3600/1000)
     Eqdifw = Eqdifw * SatPAR / (sum(Ed)*3600/1000)
-    Eqdw = Eqdirw + Eqdifw
+    # Eqdw = Eqdirw + Eqdifw
     
-    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, Eqdw=Eqdw, zendR=zendR, zendw=zendw))
+    
+    
+    # })
+    
+    
+    # return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, Eqdw=Eqdw, zendR=zendR, zendw=zendw))
+    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, zendR=zendR, zendw=zendw))
     
 }
