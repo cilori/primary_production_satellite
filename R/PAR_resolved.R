@@ -60,12 +60,6 @@ nw = 1.34 # refractive index of seawater
 
 PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     
-    
-    # profvis::profvis({
-        
-    
-    
-    
     # computer sun angle for day
     xhr = 1:23
     datepxl = doyday(yearpxl,daypxl) + hours(xhr)
@@ -82,8 +76,8 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     
     # We compute the ozone content, it can be derived from climatology
     # or use a real time value
-    sco3 = comp_sco3(ylat = latipxl, xlon = 0,jday = daypxl,ro3 = ro3)
-    Fo = solar_irr(Fobar,daypxl) # Extraterrestiral irradiance in W.m-2.nm-1
+    sco3 = comp_sco3_c(latipxl, 0, daypxl, ro3, rad)
+    Fo = solar_irr_c(Fobar, daypxl, pi2) # Extraterrestiral irradiance in W.m-2.nm-1
     
     # Find the visibility *pixvil) that corresponds to  SatPAR for latitude 
     # and day of year:
@@ -92,61 +86,12 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     PARvis = PARday[latidx,daypxl,]
     pxlvis = approx(PARvis,visibility,xout = SatPAR)$y
     
-    # Ed(0+,lambda)
-    Ed = matrix(0,23,301) # total in mW.m-2.nm-1
+    # si <- surface_irr(zendR, nw, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, wsm, ws, pxlvis, Fo)
+    si <- surface_irr_c(zendR, nw, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, wsm, ws, pxlvis, Fo)
+    Ed <- si$Ed
+    Eqdirw <- si$Eqdirw
+    Eqdifw <- si$Eqdifw
     
-    #Ed(0-, lambda)
-    Edirw = matrix(0,23,301) # direct 
-    Edifw = matrix(0,23,301) # diffus
-    # Edw = matrix(0,23,301) # total in mW.m-2.nm-1
-    
-    #Eq(0+)
-    Eqdir = matrix(0,23,301) # direct
-    Eqdif = matrix(0,23,301) # diffus
-    # Eqd = matrix(0,23,301) # total in Einstein.m-2
-    
-    # Eq(0-)
-    Eqdirw = matrix(0,23,301) # direct
-    Eqdifw = matrix(0,23,301) # diffus
-    # Eqdw = matrix(0,23,301) # total in Einstein.m-2
-    
-    zendw = rep(23,0)
-    
-    for (i in 1:23)
-    {
-        zendw[i] = asin( 1/nw * sin(zendR[i] / rad))
-        
-        if (zendR[i] < 90.)
-        {
-            
-            # above water spectral irradiance        
-            irr.gc = atmodd(iblw=0,rad = rad, lam = lam, theta = zendR[i], oza = oza, ag = ag, 
-                            aw = aw, sco3 = sco3, p=p0, wv = wv, rh = rh, am = am, wsm = wsm,
-                            ws = ws, vis = pxlvis, Fo = Fo)
-            Ed[i,] = irr.gc$Ed#[51:351]
-            
-            Eqdir[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irr.gc$Edir,
-                                                             lambda = lam)
-            Eqdif[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irr.gc$Edif,
-                                                             lambda = lam)
-            # Under water spectral irradiance.
-            irrm.gc = atmodd(iblw=1,rad = rad, lam = lam, theta = zendR[i], oza = oza, ag = ag, 
-                             aw = aw, sco3 = sco3, p=p0, wv = wv, rh = rh, am = am, wsm = wsm,
-                             ws = ws, vis = pxlvis, Fo = Fo)
-            Edirw[i,] = irrm.gc$Edir#[51:351] #w.m-2.nm-1
-            Edifw[i,] = irrm.gc$Edif#[51:351] #w.m-2.nm-1
-            
-            #We divide the direct irradiance by the in-water sun zenith angle to convert from 
-            # planar to scalar
-            Eqdirw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edir/cos(zendw[i]),
-                                                              lambda = lam)
-            #We divide the diffuse irradiance by 0.833 to convert from 
-            # planar to scalar, as in Platt and Sathyendranath 1997, page 2624 last paragraph
-            Eqdifw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edif/0.83,
-                                                              lambda = lam)
-            
-        }
-    }
     
     # Eqd = Eqdir + Eqdif
     
@@ -162,12 +107,56 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     Eqdifw = Eqdifw * SatPAR / (sum(Ed)*3600/1000)
     # Eqdw = Eqdirw + Eqdifw
     
+    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, zendR=zendR, zendw=si$zendw))
     
+}
+
+
+surface_irr <- function(zendR, nw, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, wsm, ws, pxlvis, Fo) {
     
-    # })
+    # Ed(0+,lambda)
+    Ed = matrix(0,23,301) # total in mW.m-2.nm-1
     
+    # Eq(0-)
+    Eqdirw = matrix(0,23,301) # direct
+    Eqdifw = matrix(0,23,301) # diffus
+    # Eqdw = matrix(0,23,301) # total in Einstein.m-2
     
-    # return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, Eqdw=Eqdw, zendR=zendR, zendw=zendw))
-    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, zendR=zendR, zendw=zendw))
+    zendw = rep(23,0)
+    
+    for (i in 1:23)
+    {
+        zendw[i] = asin( 1/nw * sin(zendR[i] / rad))
+        
+        if (zendR[i] < 90.)
+        {
+            
+            # above water spectral irradiance
+            irr.gc = atmodd_v2(rod=0.0, ros=0.0, rad = rad, lam = lam, theta = zendR[i], oza = oza, ag = ag, 
+                               aw = aw, sco3 = sco3, p=p0, wv = wv, rh = rh, am = am, wsm = wsm,
+                               ws = ws, vis = pxlvis, Fo = Fo)
+            Ed[i,] = irr.gc$Ed
+            
+            # Under water spectral irradiance.
+            res.sfc <- sfcrfl(rad,zendR[i],ws)
+            irrm.gc = atmodd_v2(rod=res.sfc$rod, ros=res.sfc$ros, rad = rad, lam = lam, theta = zendR[i], oza = oza, ag = ag, 
+                                aw = aw, sco3 = sco3, p=p0, wv = wv, rh = rh, am = am, wsm = wsm,
+                                ws = ws, vis = pxlvis, Fo = Fo)
+            # Edirw[i,] = irrm.gc$Edir #w.m-2.nm-1
+            # Edifw[i,] = irrm.gc$Edif #w.m-2.nm-1
+            
+            #We divide the direct irradiance by the in-water sun zenith angle to convert from 
+            # planar to scalar
+            Eqdirw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edir/cos(zendw[i]),
+                                                              lambda = lam)
+            #We divide the diffuse irradiance by 0.833 to convert from 
+            # planar to scalar, as in Platt and Sathyendranath 1997, page 2624 last paragraph
+            Eqdifw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edif/0.83,
+                                                              lambda = lam)
+            
+        }
+    }
+    
+    return(list(Ed=Ed, Eqdirw=Eqdirw, Eqdifw=Eqdifw, zendw=zendw))
     
 }

@@ -6,13 +6,12 @@ using namespace std;
 using namespace Rcpp;
 
 // [[Rcpp::export]]
-NumericMatrix underwater_irradiance_c(NumericMatrix Eqdirw, NumericMatrix Eqdifw, NumericVector chlpix,
+NumericMatrix underwater_irradiance_c(NumericMatrix Eqdirw, NumericMatrix Eqdifw, double chlz, int nstep,
                                       NumericVector lambda, NumericVector pc1f, NumericVector pc2f,
                                       NumericVector ratef, double fracys, double Sy, NumericVector asw,
                                       NumericVector zendR, NumericVector zendw, double alphaB, double PBm,
                                       NumericVector BW, int hr1, int hr2) {
     
-    double nstep = chlpix.size();
     double Rsize = lambda.size();
     NumericMatrix PP(23, nstep);
     NumericVector Kddir(Rsize);
@@ -21,7 +20,6 @@ NumericMatrix underwater_irradiance_c(NumericMatrix Eqdirw, NumericMatrix Eqdifw
     NumericVector tmp_Eqdifw(Rsize);
     double PIz;
     double apbar;
-    double chlz = chlpix[0];
     
     // To compute the underwater light field, we need to know total absorption and total backscattering
     // a = aw + aphy + acdom, bb = bbw + bbp, this as to be define for each wavelength

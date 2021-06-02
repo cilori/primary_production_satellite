@@ -127,7 +127,7 @@ sfcrfl <- function(rad,theta,ws) {
 }
 
 
-navaer <- function(rh,am,wsm,ws,vi) {
+navaer <- function(rh,am,wsm,ws,vis) {
   
   #  Computes aerosol parameters according to a simplified version
   #  of the Navy marine aerosol model.
@@ -269,6 +269,78 @@ atmodd <- function(iblw=iblw,rad=rad,lam=lam,theta=theta,oza=oza,
 
   Edaux = Ediraux + Edifaux
 
+  list(Edir = Ediraux, Edif= Edifaux,Ed = Edaux)
+  
+}
+
+# rod and ros calculated before calling this version of atmodd
+atmodd_v2 <- function(rod, ros, rad=rad,lam=lam,theta=theta,oza=oza,
+                      ag=ag,aw=aw,sco3=sco3,p=p,wv=wv,rh=rh,am=am,
+                      wsm=wsm,ws=ws,vis=vis,Fo=Fo) {
+  
+  #  Model for atmospheric transmittance of solar irradiance through
+  #  a maritime atmosphere.  Computes direct and diffuse separately.
+  #  Includes water vapor and oxygen absorption.
+  
+  #  Compute atmospheric path lengths (air mass); pressure-corrected
+  cosunz = cos(theta/rad)
+  #  Modified March, 1994 according to Kasten and Young 1989.
+  
+  rex = -1.6364
+  rtmp = (96.07995-theta)^rex
+  rm = 1.0/(cosunz+0.50572*rtmp)
+  rmp = p/p0*rm
+  otmp = (cosunz*cosunz+44.0/6370.0)^0.5
+  rmo = (1.0+22.0/6370.0)/otmp
+  
+  #  Obtain aerosol parameters; simplified Navy aerosol model
+  res.aer <- navaer(rh,am,wsm,ws,vis)
+  alpha <- res.aer$alpha
+  beta <- res.aer$beta
+  asymp <- res.aer$asymp
+  wa <- res.aer$wa
+  
+  eta = -alpha
+  #   Forward scattering probability
+  alg = log(1.0-asymp)
+  afs = alg*(1.459+alg*(.1595+alg*.4129))
+  bfs = alg*(.0783+alg*(-.3824-alg*.5874))
+  Fa = 1.0 - 0.5*exp((afs+bfs*cosunz)*cosunz)
+  
+  # Compute spectral irradiance
+  #   Rayleigh, by Bird's method
+  rlam = lam*1.0E-3
+  tr = 1.0/(115.6406*rlam^4 - 1.335*rlam^2)
+  rtra = exp(-tr*rmp)
+  #    Ozone
+  to = oza*sco3   #optical thickness
+  otra = exp(-to*rmo)   #transmittance
+  #   Aerosols
+  ta = beta*rlam^eta
+  atra = exp(-ta*rm)
+  taa = exp(-(1.0-wa)*ta*rm)
+  tas = exp(-wa*ta*rm)
+  #   Oxygen/gases
+  gtmp = (1.0 + 118.3*ag*rmp)^0.45
+  gtmp2 = -1.41*ag*rmp
+  gtra = exp(gtmp2/gtmp)
+  #   Water Vapor
+  wtmp = (1.0+20.07*aw*wv*rm)^0.45
+  wtmp2 = -0.2385*aw*wv*rm
+  wtra = exp(wtmp2/wtmp)
+  
+  #  Direct irradiance
+  Ediraux = Fo*cosunz*rtra*otra*atra*gtra*wtra*(1.0-rod)
+  
+  #   Diffuse irradiance
+  dray = Fo*cosunz*gtra*wtra*otra*taa*0.5*(1.0-rtra^.95)
+  daer = Fo*cosunz*gtra*wtra*otra*rtra^1.5*taa*Fa*(1.0-tas)
+  
+  #  Total diffuse
+  Edifaux = (dray + daer)*(1.0-ros)
+  
+  Edaux = Ediraux + Edifaux
+  
   list(Edir = Ediraux, Edif= Edifaux,Ed = Edaux)
   
 }

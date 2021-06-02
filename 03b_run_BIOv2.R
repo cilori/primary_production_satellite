@@ -3,6 +3,7 @@ library(RcppArmadillo)
 source("03b_BIOv2_model.R")
 source("R/PAR_resolved.R")
 sourceCpp("underwater_irradiance.cpp")
+sourceCpp("surface_irradiance.cpp")
 # library(oceancolouR) # for shifted_gaussian (chl profile)
 
 
@@ -54,13 +55,7 @@ chlpix = 8
 alphaB = 0.033 * 1000 # those have to be defined before in mg C (mg chl m-3)-1 s-1
 PBm = 2.5 # Those have to be defined before
 
-
-# # do some speedy stuff
-# library(memoise)
-# library(compiler)
-# # pp_BIO_v2 <- memoise(cmpfun(pp_BIO_v2))
-# # PAR_resolved <- memoise(cmpfun(PAR_resolved))
-# # # IT MAKES NO DIFFERENCE
+uniform_profile = TRUE
 
 
 
@@ -69,7 +64,6 @@ PBm = 2.5 # Those have to be defined before
 
 
 ptm <- Sys.time()
-
 presolved <- PAR_resolved(latipxl = latipxl,
                           daypxl = daypxl,
                           yearpxl = yearpxl,
@@ -79,7 +73,6 @@ Eqdirw <- presolved$Eqdirw
 # Eqdw <- presolved$Eqdw
 zendR <- presolved$zendR
 zendw <- presolved$zendw
-
 print(Sys.time() - ptm)
 
 
@@ -88,16 +81,28 @@ print(Sys.time() - ptm)
 
 
 ptm <- Sys.time()
-result1 <- pp_BIO_v2_c(chlpix = chlpix,
-                     alphaB = alphaB,
-                     PBm = PBm,
-                     Eqdifw = Eqdifw,
-                     Eqdirw = Eqdirw,
-                     zendR = zendR,
-                     zendw = zendw,
-                     asw = asw)
+if (uniform_profile) {
+    result <- pp_BIO_v2_c(chlpix = chlpix,
+                          alphaB = alphaB,
+                          PBm = PBm,
+                          Eqdifw = Eqdifw,
+                          Eqdirw = Eqdirw,
+                          zendR = zendR,
+                          zendw = zendw,
+                          asw = asw)
+} else {
+    result <- pp_BIO_v2_NU_c(chlpix = chlpix,
+                          alphaB = alphaB,
+                          PBm = PBm,
+                          Eqdifw = Eqdifw,
+                          Eqdirw = Eqdirw,
+                          zendR = zendR,
+                          zendw = zendw,
+                          asw = asw)
+}
+
 print(Sys.time() - ptm)
-print(result1$PP)
+print(result$PP)
 
 
 
@@ -127,6 +132,14 @@ box()
 
 
 stop()
+
+
+# # do some speedy stuff
+# library(memoise)
+# library(compiler)
+# # pp_BIO_v2 <- memoise(cmpfun(pp_BIO_v2))
+# # PAR_resolved <- memoise(cmpfun(PAR_resolved))
+# # # IT MAKES NO DIFFERENCE
 
 
 # speed test with model v1 - original model is faster (mostly because of the lower
