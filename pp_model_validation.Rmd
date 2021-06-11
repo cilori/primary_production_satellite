@@ -1,0 +1,578 @@
+---
+title: "Primary Production model validation"
+output: html_document
+---
+
+```{r setup, include=FALSE, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(gganimate)
+library(transformr)
+library(oce)
+library(insol)
+library(stringr)
+library(lubridate)
+library(Rcpp)
+library(patchwork)
+library(dplyr)
+
+source("R/bird.R")
+source("R/I0_corr_season.R")
+source("R/I0_corr_cloud_BIO.R")
+source("R/I0_corr_refl_loss.R")
+source("R/PAR_resolved.R")
+source("R/Gcmod.r")
+sourceCpp("underwater_irradiance.cpp")
+sourceCpp("surface_irradiance.cpp")
+```
+
+
+## BIO Primary Production model - version 2
+
+This is a summary of the required input and the models used in each step of primary production calculation, with validation for each input and model.  
+
+BIOv2 primary production is calculated using light integrated over wavebands, and then integrated over depth and time using the following resolutions:
+
+- 400-700nm wavebands at 1nm intervals  
+- 0-120m depth at 0.5m intervals  
+- 0-24 hours at 1hr intervals  
+
+
+
+
+
+# INPUT
+
+
+## Variables
+
+### PI parameters
+
+- based on in situ data
+
+### Biomass profile parameters
+
+- based on in situ data
+- for non-uniform profiles only
+
+
+
+## Satellite data
+
+
+### Chlorophyll
+
+- using OCx for better comparison/validation, but POLY4 would be more accurate in the NWA
+- 8day arithmetic avg of daily data
+- gap-filled using DINEOF (compare to VGPM gap-fill method)
+    - note: temporal covariance matrix filter was not used (this can possibly improve the results if there are long gaps between days with valid data), see the azcarate paper from 2009?
+    - note that vgpm uses equidistant cylindrical input, and this model uses binned data
+
+
+### PAR
+
+- 8day arithmetic avg of daily data
+    - note that vgpm uses equidistant cylindrical input, and this model uses binned data
+
+
+
+
+# MODEL
+
+## STEP 1: SURFACE IRRADIANCE
+
+- surface light model: Emmanuel's png from comparison of bird, GC, COART
+- note that we're using 8day input data but this requires a day, so the first day of the week is used
+
+- coart:
+https://satcorps.larc.nasa.gov/jin/coart.html
+
+- units, conversions
+
+
+
+
+
+```{r}
+
+yearpxl = 2018
+
+days <- c(80,172,266,355) # test on equinoxes and solstices
+hours <- seq(6,21,3)
+lats <- c(40, 50, 60, 70, 80)
+
+# use dataframe with expand.grid for all combinations of day/hour/lat
+totest <- expand.grid(days,hours,lats)
+
+
+irrad_df <- data.frame(matrix(nrow=dim(totest)[1]*301*2, ncol=9), stringsAsFactors = FALSE)
+colnames(irrad_df) <- c("Day", "Hour", "Latitude", "Solar_zenith_angle", "Model", "Wavelength", "Direct", "Diffuse", "Total")
+
+bird_wl = seq(0.4,0.7,by=0.005)
+gc_wl = seq(0.4,0.7,by=0.001)
+
+
+for (i in 1:nrow(totest)) {
+    
+    daypxl = totest[i,1]
+    hrpxl = totest[i,2]
+    latipxl = totest[i,3]
+    
+    # zenith angle, in radians (bird requires radians, gc requires degrees)
+    ZEN = (90 - sunAngle(t=str_replace(as.character(doyday(yearpxl,daypxl) + hours(hrpxl)),"AST","UTC"), longitude = 0, latitude = latipxl)$altitude) * pi/180
+    
+    coart_light <- NA
+    
+    # BIRD above-surface irradiance in w.m-2.um-1
+    irr.bird = bird(ZEN, bird_wl)
+    if (length(irr.bird$DIRECT)==1) {
+        bird_dir <- bird_dif <- bird_total <- rep(NA,301)
+    } else {
+        irr.seacor = I0_corr_season(I0_direct = irr.bird$DIRECT,I0_diffuse = irr.bird$DIFFUSE,Day = daypxl)
+        irr.cloudcorr = I0_corr_cloud_BIO(I0_direct = irr.seacor$I0_direct, I0_diffuse = irr.seacor$I0_diffuse, ZEN = ZEN,Cloud = 0)
+        bird_light = I0_corr_refl_loss(I0_direct = irr.cloudcorr$I0_direct, I0_diffuse = irr.cloudcorr$I0_diffuse, ZEN=ZEN)
+        bird_dir <- bird_light$I0_direct
+        bird_dir <- approx(x=bird_wl, y=bird_dir, xout=gc_wl)$y
+        bird_dif <- bird_light$I0_diffuse
+        bird_dif <- approx(x=bird_wl, y=bird_dif, xout=gc_wl)$y
+        bird_total <- bird_dir + bird_dif
+    }
+    
+    # GREGG-CARDER above-surface irradiance in w.m-2.nm-1
+    sco3 = comp_sco3(ylat = latipxl, xlon = 0,jday = daypxl,ro3 = 100)
+    Fo = solar_irr(Fobar,daypxl)
+    gc_light = atmodd_v2_c(rod=0, ros=0, rad=180/pi, lam=gc_wl*1000, theta=ZEN*180/pi, oza=oza, ag=ag, aw=aw, sco3=sco3, p=29.92, p0=29.92, wv=1.5, rh=0.8, am=1, wsm=0, ws=0, vis=40, Fo=Fo)
+    gc_dir <- gc_light$Edir * 1000
+    gc_dif <- gc_light$Edif * 1000
+    gc_total <- gc_light$Ed * 1000
+    
+    
+    inds <- ((301*2)*(i-1)+1):((301*2)*i)
+    irrad_df[inds,] <- data.frame(Day=daypxl, Hour=hrpxl, Latitude=latipxl, Solar_zenith_angle=ZEN*180/pi,
+                                  Model=c(rep("Bird",301), rep("Gregg-Carder",301)),
+                                  Wavelength=c(gc_wl, gc_wl)*1000,
+                                  Direct=c(bird_dir, gc_dir),
+                                  Diffuse=c(bird_dif, gc_dif),
+                                  Total=c(bird_total, gc_total),
+                                  stringsAsFactors = FALSE)
+    
+}
+
+
+
+
+test = irrad_df %>%
+    dplyr::filter(Day==days[1] & Latitude==lats[1]) %>%
+    tidyr::pivot_longer(Direct:Total, names_to="Type", values_to="Irradiance")
+
+p <- ggplot(test) +
+    geom_line(aes(x=Wavelength, y=Irradiance, color=Model)) +
+    theme_bw() +
+    labs(x="Wavelength (nm)", y="Above water surface irradiance (W.m-2.nm-1)") +
+    facet_wrap(~Type) +
+    transition_time(Hour) +
+    labs(title = "Hour: {frame_time}") +
+    ease_aes('linear')
+
+# animate(p)
+
+
+
+
+
+# CHECK ZENITH ANGLES
+
+
+
+
+
+
+
+
+
+
+
+# yearpxl = 2018
+# # daypxl = 120
+# # hrpxl = 14
+# # latipxl = 58
+# 
+# daypxl = 40
+# hrpxl = 8
+# latipxl = 50.
+# 
+# # zenith angle, in radians (bird requires radians, gc requires degrees)
+# ZEN = (90 - sunAngle(t=str_replace(as.character(doyday(yearpxl,daypxl) + hours(hrpxl)),"AST","UTC"), longitude = 0, latitude = latipxl)$altitude) * pi/180
+# 
+# bird_wl = seq(0.4,0.7,by=0.005)
+# gc_wl = seq(0.4,0.7,by=0.001)
+# 
+# coart_light <- NA
+# # BIRD above-surface irradiance in w.m-2.um-1
+# irr.bird = bird(ZEN, bird_wl)
+# irr.seacor = I0_corr_season(I0_direct = irr.bird$DIRECT,I0_diffuse = irr.bird$DIFFUSE,Day = daypxl)
+# irr.cloudcorr = I0_corr_cloud_BIO(I0_direct = irr.seacor$I0_direct, I0_diffuse = irr.seacor$I0_diffuse, ZEN = ZEN,Cloud = 0)
+# bird_light = I0_corr_refl_loss(I0_direct = irr.cloudcorr$I0_direct, I0_diffuse = irr.cloudcorr$I0_diffuse, ZEN=ZEN)
+# # GREGG-CARDER above-surface irradiance in w.m-2.nm-1
+# sco3 = comp_sco3(ylat = latipxl, xlon = 0,jday = daypxl,ro3 = 100)
+# Fo = solar_irr(Fobar,daypxl)
+# gc_light = atmodd_v2_c(rod=0, ros=0, rad=180/pi, lam=gc_wl*1000, theta=ZEN*180/pi, oza=oza, ag=ag, aw=aw, sco3=sco3, p=29.92, p0=29.92, wv=1.5, rh=0.8, am=1, wsm=0, ws=0, vis=40, Fo=Fo)
+# 
+# 
+# # DIRECT RADIANCE COMPARISON
+# bird_dir <- bird_light$I0_direct
+# bird_dir <- approx(x=bird_wl, y=bird_dir, xout=gc_wl)$y
+# gc_dir <- gc_light$Edir * 1000
+# dir <- data.frame(Wavelength=gc_wl*1000,
+#                   COART=coart_light,
+#                   Bird=bird_dir,
+#                   Gregg_Carder=gc_dir,
+#                   stringsAsFactors = FALSE) %>%
+#     tidyr::pivot_longer(COART:Gregg_Carder, names_to="Model", values_to="Irradiance")
+# pdir <- ggplot(dir) +
+#     geom_line(aes(x=Wavelength, y=Irradiance, color=Model)) +
+#     theme_bw() +
+#     labs(x="Wavelength (nm)", y="Above water surface irradiance (W.m-2.nm-1)") +
+#     ggtitle("Direct")
+# 
+# # DIFFUSE RADIANCE COMPARISON
+# bird_dif <- bird_light$I0_diffuse
+# bird_dif <- approx(x=bird_wl, y=bird_dif, xout=gc_wl)$y
+# gc_dif <- gc_light$Edif * 1000
+# dif <- data.frame(Wavelength=gc_wl*1000,
+#                   COART=coart_light,
+#                   Bird=bird_dif,
+#                   Gregg_Carder=gc_dif,
+#                   stringsAsFactors = FALSE) %>%
+#     tidyr::pivot_longer(COART:Gregg_Carder, names_to="Model", values_to="Irradiance")
+# pdif <- ggplot(dif) +
+#     geom_line(aes(x=Wavelength, y=Irradiance, color=Model)) +
+#     theme_bw() +
+#     labs(x="Wavelength (nm)", y="Above water surface irradiance (W.m-2.nm-1)") +
+#     ggtitle("Diffuse")
+# 
+# # COMBINED RADIANCE COMPARISON
+# light <- data.frame(Wavelength=gc_wl*1000,
+#                     COART=coart_light,
+#                     Bird=bird_dir+bird_dif,
+#                     Gregg_Carder=gc_light$Ed * 1000,
+#                   stringsAsFactors = FALSE) %>%
+#     tidyr::pivot_longer(COART:Gregg_Carder, names_to="Model", values_to="Irradiance")
+# plight <- ggplot(light) +
+#     geom_line(aes(x=Wavelength, y=Irradiance, color=Model)) +
+#     theme_bw() +
+#     labs(x="Wavelength (nm)", y="Above water surface irradiance (W.m-2.nm-1)") +
+#     ggtitle("Direct + Diffuse")
+# 
+# pdir + pdif + plight + plot_layout(guides="collect")
+
+```
+
+
+
+## STEP 2: SUBSURFACE IRRADIANCE
+
+### STEP 2A
+
+- chla profile (uniform or non-uniform)
+- non-uniform:
+    - shifted gaussian used to model profile
+    - biomass profile parameters required, taken from in situ data
+
+
+### STEP 2B
+
+- chla --> absorption and backscattering --> Kd --> attenuated Ed (at each depth, hour, and waveband)
+- integrate Ed over wavelength
+- check/update:
+
+    - phytoplankton absorption (AC) using the model from Devred et al. 2006: AC = pc1*(1-exp(-rate*chlz)) + pc2*chlz
+    - slope of the exponential decrease of yellow substances, using the model from Bricaud et al. 1981 Limnology and Oceanography: Sy = 0.014
+    - fraction of ays443 to aph443: fracsys = 0.35
+    - backscattering of chla: BC = BC660*(660/lambda)^(-log10(chlz))
+        - BC spectral dependence depends on chlz, this means that at chl = 1 there is no spectral dependence. This is weird and has to be checked
+
+
+## STEP 3: PRIMARY PRODUCTION
+
+- pp model (each hour and depth, then integrated)
+- use at least 2 8day "weeks" to compare PP models
+- compare biov2 to carla's model and standard vgpm (want it to be within 40% difference)
+    - they use equidistant cylindrical input/output, we use binned data - WAIT, I THINK GEORGE USES THE BINNED DATA AT 4KM RESOLUTION, SO PP SHOULD END UP LIKE THAT AS WELL?
+    - do they use uniform or non-uniform profiles?
+
+
+
+# REFERENCES
+
+- VGPM: http://sites.science.oregonstate.edu/ocean.productivity/vgpm.model.php
+model description - vgpm
+
+-bird
+-gc
+-91 pp paper
+-atbd laval
+-dineof
+-azcarate 2009 temp.cov.mat.filt.
+-bricaud 1981
+-devred 2006
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- ```{r prelim, echo=FALSE, warning=FALSE, message=FALSE} -->
+<!-- library(raster) -->
+<!-- library(ggplot2) -->
+<!-- library(gridExtra) -->
+<!-- library(oceancolouR) -->
+<!-- library(fst) -->
+<!-- library(stringr) -->
+<!-- library(scales) -->
+
+<!-- # vgpm files (pp, chl, par) -->
+<!-- vgpm_PP_file <- "PP_VGPM/8day_2160x4320/modis/vgpm.2015097.hdf" -->
+<!-- vgpm_chl_file <- "PP_VGPM/8day_2160x4320/modis/input_data/chl.2015097.hdf" -->
+<!-- vgpm_par_file <- "PP_VGPM/8day_2160x4320/modis/input_data/par.2015097.hdf" -->
+
+<!-- # biov2 file (pp, chl, par all in same file) -->
+<!-- bio_file <- "03_PP_output/8day/BIOv2_NWA_8day_2015.fst" -->
+<!-- bio_input_gapfill <- "../data_gaps/filled_files/filled_NWA_MODIS_CHL_POLY4_2015_8day_logged_randomCVpts.fst" -->
+
+<!-- # variables to print below -->
+<!-- method <- "BIOv2" -->
+<!-- year <- 2015 -->
+<!-- day_of_year <- 97 -->
+<!-- week <- week8(lubridate::as_date(paste(year, day_of_year), format="%Y %j")) -->
+<!-- interval <- "8day"            # 8day or monthly -->
+<!-- uniform_profile <- TRUE       # chla profile -->
+<!-- alphaB = 0.033 * 1000         # mg C (mg chl m-3)-1 s-1 -->
+<!-- PBm = 2.5 -->
+
+<!-- lon_bounds <- lon_bounds[["NWA"]] -->
+<!-- lat_bounds <- c(lat_bounds[["NWA"]][1], 80) -->
+<!-- ``` -->
+
+
+<!-- # Details -->
+
+<!-- This is a comparison of the BIOv2 primary production model to Standard VGPM from MODIS data, using uniform biomass profiles.   -->
+
+<!-- VGPM source: http://sites.science.oregonstate.edu/ocean.productivity/custom.php   -->
+
+<!-- Color scales: mean +- 2 standard deviations   -->
+
+<!-- % Difference = 100 * (BIOv2 - VGPM) / VGPM   -->
+
+<!-- Possible sources of discrepancies between the two, aside from the model:   -->
+<!--   - Different CHL / PAR input   -->
+<!--   - Different gap-filling models (BIOv2 uses a simple DINEOF model)   -->
+
+
+
+
+<!--   RESAMPLING OF VGPM TO MATCH RESOLUTION????   -->
+<!--   ALSO, CURRENTLY USING NON-FILLED PAR DATA FOR BIOV2   -->
+
+
+
+<!-- The day of year used in calculations in the 8day PP images is the first day of that 8day period.   -->
+<!-- POLY4 chlorophyll was used instead of OCx.   -->
+
+
+
+
+
+
+
+
+<!-- # Input data comparison (CHL and PAR) -->
+
+<!-- VGPM CHL: http://orca.science.oregonstate.edu/1080.by.2160.8day.hdf.chl.modis.php   -->
+<!-- VGPM PAR: http://orca.science.oregonstate.edu/1080.by.2160.8day.hdf.par.modis.php   -->
+
+<!-- BIOv2 CHL: Pancanadian dataset, averaged to 8day images, filled using DINEOF   -->
+<!-- BIOv2 PAR: Pancanadian dataset, averaged to 8day images   -->
+
+<!-- ### CHL -->
+
+<!-- ```{r echo=FALSE, results='asis', fig.align='center', fig.width=10, fig.height=5} -->
+
+<!-- vgpm_rast <- raster(vgpm_chl_file) -->
+
+<!-- bio_df <- read_fst(bio_file) %>% dplyr::filter(floor(time)==year & doy==day_of_year) -->
+<!-- bio_rast <- var_to_rast(df=bio_df %>% dplyr::select(bin, chl), ext=c(lon_bounds, lat_bounds)) -->
+<!-- bio_unfilled_df <- read_fst(bio_input_gapfill) %>% dplyr::filter(time==(year+(week-1)/46)) -->
+<!-- bio_unfilled_rast <- var_to_rast(df=bio_unfilled_df %>% dplyr::select(bin, var), ext=c(lon_bounds, lat_bounds)) -->
+
+<!-- crs(vgpm_rast) <- crs(bio_rast) -->
+<!-- extent(vgpm_rast) <- extent(c(xmin=-180,xmax=180,ymin=-90,ymax=90)) -->
+<!-- vgpm_rast <- crop(vgpm_rast, extent(bio_rast)) -->
+<!-- vgpm_rast[vgpm_rast < 0] <- NA -->
+<!-- # https://www.neonscience.org/dc-raster-calculations-r -->
+<!-- # For raster math, make sure the rasters have the same CRS, resolution, and defined minimum and maximum values -->
+<!-- vgpm_rast <- resample(vgpm_rast, bio_rast) -->
+
+<!-- names(vgpm_rast) <- "VGPM" -->
+<!-- names(bio_rast) <- "BIOV2_POLY4_FILLED" -->
+<!-- names(bio_unfilled_rast) <- "BIOV2_POLY4" -->
+
+<!-- # Adjust the range of the color scale to +- 2 standard deviations -->
+<!-- vgpm_vec <- as.numeric(as.vector(vgpm_rast)) -->
+<!-- bio_vec <- as.numeric(as.vector(bio_rast)) -->
+<!-- full_vec <- c(vgpm_vec,bio_vec) -->
+<!-- full_range <- c(mean(full_vec,na.rm=T) - 2*sd(full_vec,na.rm=T), -->
+<!--                 mean(full_vec,na.rm=T) + 2*sd(full_vec,na.rm=T)) -->
+
+<!-- # Make a raster of the difference between them, on a separate color scale -->
+<!-- diff_rast <- ((bio_rast - vgpm_rast)/vgpm_rast) * 100 -->
+<!-- # diff_rast <- asinh(diff_rast) -->
+
+<!-- diff_vec <- as.numeric(as.vector(diff_rast)) -->
+<!-- diff_range <- c(mean(diff_vec,na.rm=T) - 2*sd(diff_vec,na.rm=T), -->
+<!--                 mean(diff_vec,na.rm=T) + 2*sd(diff_vec,na.rm=T)) -->
+<!-- # Remove outliers for map color scale -->
+<!-- diff_rast[diff_rast < diff_range[1] | diff_rast > diff_range[2]] <- NA -->
+
+<!-- grid.arrange(spplot(stack(vgpm_rast, bio_unfilled_rast, bio_rast), zlim=full_range), -->
+<!--              # spplot(diff_rast, zlim=diff_range, main="asinh % Difference"), -->
+<!--              spplot(diff_rast, zlim=diff_range, main="% Difference"), -->
+<!--              ncol=2, widths=c(7,3)) -->
+
+<!-- ``` -->
+
+<!-- ```{r fig.width=10, fig.height=2} -->
+<!-- h <- ggplot(data.frame(Difference=diff_vec, stringsAsFactors = FALSE), aes(Difference)) + -->
+<!--      geom_density(fill="grey") + -->
+<!--      ylab("Density") + -->
+<!--      xlab(expression(paste('% difference in input chlorophyll'))) + -->
+<!--      scale_x_log10(labels = format_format(nsmall=0, scientific=FALSE, drop0trailing=TRUE)) + -->
+<!--      theme_bw() + -->
+<!--      theme(legend.position="none") -->
+<!-- suppressWarnings(print(h)) -->
+<!-- ``` -->
+
+
+
+
+<!-- ### PAR -->
+
+<!-- ```{r echo=FALSE, results='asis', fig.align='center', fig.width=10, fig.height=5} -->
+
+<!-- vgpm_rast <- raster(vgpm_par_file) -->
+
+<!-- # bio_df <- read_fst(bio_file) # already loaded -->
+<!-- bio_rast <- var_to_rast(df=bio_df %>% dplyr::select(bin, par), ext=c(lon_bounds, lat_bounds)) -->
+
+<!-- crs(vgpm_rast) <- crs(bio_rast) -->
+<!-- extent(vgpm_rast) <- extent(c(xmin=-180,xmax=180,ymin=-90,ymax=90)) -->
+<!-- vgpm_rast <- crop(vgpm_rast, extent(bio_rast)) -->
+<!-- vgpm_rast[vgpm_rast < 0] <- NA -->
+<!-- # https://www.neonscience.org/dc-raster-calculations-r -->
+<!-- # For raster math, make sure the rasters have the same CRS, resolution, and defined minimum and maximum values -->
+<!-- vgpm_rast <- resample(vgpm_rast, bio_rast) -->
+
+<!-- names(vgpm_rast) <- "VGPM" -->
+<!-- names(bio_rast) <- toupper(method) -->
+
+<!-- # Adjust the range of the color scale to +- 2 standard deviations -->
+<!-- vgpm_vec <- as.numeric(as.vector(vgpm_rast)) -->
+<!-- bio_vec <- as.numeric(as.vector(bio_rast)) -->
+<!-- full_vec <- c(vgpm_vec,bio_vec) -->
+<!-- full_range <- c(mean(full_vec,na.rm=T) - 2*sd(full_vec,na.rm=T), -->
+<!--                 mean(full_vec,na.rm=T) + 2*sd(full_vec,na.rm=T)) -->
+
+<!-- # Make a raster of the difference between them, on a separate color scale -->
+<!-- diff_rast <- ((bio_rast - vgpm_rast)/vgpm_rast) * 100 -->
+<!-- names(diff_rast) <- "% Difference" -->
+<!-- diff_vec <- as.numeric(as.vector(diff_rast)) -->
+<!-- diff_range <- c(mean(diff_vec,na.rm=T) - 2*sd(diff_vec,na.rm=T), -->
+<!--                 mean(diff_vec,na.rm=T) + 2*sd(diff_vec,na.rm=T)) -->
+<!-- # Remove outliers for map color scale -->
+<!-- diff_rast[diff_rast < diff_range[1] | diff_rast > diff_range[2]] <- NA -->
+
+<!-- grid.arrange(spplot(stack(vgpm_rast, bio_rast), zlim=full_range), -->
+<!--              spplot(diff_rast, zlim=diff_range, main="% Difference"), -->
+<!--              ncol=2, widths=c(5,3)) -->
+
+<!-- ``` -->
+
+<!-- ```{r fig.width=10, fig.height=2} -->
+<!-- h <- ggplot(data.frame(Difference=diff_vec, stringsAsFactors = FALSE), aes(Difference)) + -->
+<!--      geom_density(fill="grey") + -->
+<!--      ylab("Density") + -->
+<!--      xlab(expression(paste('% difference in input PAR'))) + -->
+<!--      scale_x_continuous(labels = format_format(nsmall=0, scientific=FALSE, drop0trailing=TRUE)) + -->
+<!--      theme_bw() + -->
+<!--      theme(legend.position="none") -->
+<!-- suppressWarnings(print(h)) -->
+<!-- ``` -->
+
+
+
+<!-- # PP comparison -->
+
+<!-- ```{r echo=FALSE, results='asis', fig.align='center', fig.width=10, fig.height=5} -->
+
+<!-- vgpm_rast <- raster(vgpm_PP_file) -->
+
+<!-- # bio_df <- read_fst(bio_file) # already loaded -->
+<!-- bio_rast <- var_to_rast(df=bio_df %>% dplyr::select(bin, PP), ext=c(lon_bounds, lat_bounds)) -->
+
+<!-- crs(vgpm_rast) <- crs(bio_rast) -->
+<!-- extent(vgpm_rast) <- extent(c(xmin=-180,xmax=180,ymin=-90,ymax=90)) -->
+<!-- vgpm_rast <- crop(vgpm_rast, extent(bio_rast)) -->
+<!-- vgpm_rast[vgpm_rast < 0] <- NA -->
+<!-- # https://www.neonscience.org/dc-raster-calculations-r -->
+<!-- # For raster math, make sure the rasters have the same CRS, resolution, and defined minimum and maximum values -->
+<!-- vgpm_rast <- resample(vgpm_rast, bio_rast) -->
+
+<!-- names(vgpm_rast) <- "VGPM" -->
+<!-- names(bio_rast) <- toupper(method) -->
+
+<!-- # Adjust the range of the color scale to +- 2 standard deviations -->
+<!-- vgpm_vec <- as.numeric(as.vector(vgpm_rast)) -->
+<!-- bio_vec <- as.numeric(as.vector(bio_rast)) -->
+<!-- full_vec <- c(vgpm_vec,bio_vec) -->
+<!-- full_range <- c(mean(full_vec,na.rm=T) - 2*sd(full_vec,na.rm=T), -->
+<!--                 mean(full_vec,na.rm=T) + 2*sd(full_vec,na.rm=T)) -->
+
+<!-- # Make a raster of the difference between them, on a separate color scale -->
+<!-- diff_rast <- ((bio_rast - vgpm_rast)/vgpm_rast) * 100 -->
+<!-- names(diff_rast) <- "% Difference" -->
+<!-- diff_vec <- as.numeric(as.vector(diff_rast)) -->
+<!-- diff_range <- c(mean(diff_vec,na.rm=T) - 2*sd(diff_vec,na.rm=T), -->
+<!--                 mean(diff_vec,na.rm=T) + 2*sd(diff_vec,na.rm=T)) -->
+<!-- # Remove outliers for map color scale -->
+<!-- diff_rast[diff_rast < diff_range[1] | diff_rast > diff_range[2]] <- NA -->
+
+<!-- grid.arrange(spplot(stack(vgpm_rast, bio_rast), zlim=full_range), -->
+<!--              spplot(diff_rast, zlim=diff_range, main="% Difference"), -->
+<!--              ncol=2, widths=c(5,3)) -->
+
+<!-- ``` -->
+
+
+<!-- ```{r fig.width=10, fig.height=2} -->
+<!-- h <- ggplot(data.frame(Difference=diff_vec, stringsAsFactors = FALSE), aes(Difference)) + -->
+<!--      geom_density(fill="grey") + -->
+<!--      ylab("Density") + -->
+<!--      xlab(expression(paste('% difference in primary production'))) + -->
+<!--      scale_x_continuous(labels = format_format(nsmall=0, scientific=FALSE, drop0trailing=TRUE)) + -->
+<!--      theme_bw() + -->
+<!--      theme(legend.position="none") -->
+<!-- suppressWarnings(print(h)) -->
+<!-- ``` -->
+

@@ -15,7 +15,7 @@ library(fields)
 # scale above-water Satellite PAR to the above-water modeled
 # PAR, once the visibility is found, we derive E_d(0-,lambda)
 source("R/Gcmod.r")
-source("R/Watt_to_quanta.R")
+source("R/convert_watt_to_quanta.R")
 
 # here We download clear sky irradiance, it will be used to
 # derive Ed(lambda,0-) as we sill scale the visibility to match
@@ -66,13 +66,14 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     julianpxl = JD(doyday(yearpxl,daypxl))
     datepxl = str_replace(as.character(datepxl),"AST","UTC") # Here I put the date to U
     
-    # Here we convert PAR from Einstein.m-2.d-1 back to mW.cm-2.microm-2
+    # Here we convert PAR from Einstein.m-2.d-1 back to mW.cm-2.microm-1
     # see seawifs tech report vol 22 page 49 
     # https://oceancolor.gsfc.nasa.gov/atbd/par/seawifs_par_wfigs.pdf
     SatPAR = SatPAR/1.193 
     
     # Here we compute the sun zenith angle in degree, which is 90 - elevation
     zendR = 90 - sunAngle(datepxl,longitude = 0, latitude = latipxl)$altitude # Function from "oce" package
+    zendw = asin( 1/nw * sin(zendR / rad))
     
     # We compute the ozone content, it can be derived from climatology
     # or use a real time value
@@ -86,33 +87,47 @@ PAR_resolved <- function(latipxl, daypxl, yearpxl, SatPAR) {
     PARvis = PARday[latidx,daypxl,]
     pxlvis = approx(PARvis,visibility,xout = SatPAR)$y
     
-    # si <- surface_irr(zendR, nw, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, wsm, ws, pxlvis, Fo)
-    si <- surface_irr_c(zendR, nw, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, wsm, ws, pxlvis, Fo)
+    # si <- surface_irr(zendR, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, wsm, ws, pxlvis, Fo)
+    si <- surface_irr_c(zendR, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, wsm, ws, pxlvis, Fo)
     Ed <- si$Ed
     Eqdirw <- si$Eqdirw
     Eqdifw <- si$Eqdifw
     
     
-    # Eqd = Eqdir + Eqdif
+    # PLANAR TO SCALAR CONVERSIONS
+    # We divide the direct irradiance by the in-water sun zenith angle to convert from planar to scalar
+    Eqdirw = Eqdirw/cos(zendw)
+    # We divide the diffuse irradiance by 0.833 to convert from planar to scalar, as in Platt and Sathyendranath 1997, page 2624 last paragraph
+    Eqdifw = Eqdifw/0.83
     
+    # UNIT CONVERSION NOTES:
+    #   watt = J/sec (keep this unit of time in mind)
+    #   Gregg-Carder units: watt/m^2/nm
+    #   SatPAR units: started as Einstein.m-2.d-1, was converted above to mW.cm-2.microm-1
+    #   Final units wanted for the Ed to return: Einstein.m-2.hr-1.nm-1
+    
+    # CONVERT UNITS
+    Eqdirw = t(Watt_perm_2_to_microMol_per_m2_per_s(Ed = t(Eqdirw), lambda = lam))
+    Eqdifw = t(Watt_perm_2_to_microMol_per_m2_per_s(Ed = t(Eqdifw), lambda = lam))
+    # Eqd = Eqdir + Eqdif
+
     # Now we use Ed and SatPar to scale Edw
     # Note that extraterrestrial solar irradiance in Gregg and Carder is in w.cm-2.microm and we want
     # it in mW.m-2.nm, so we *1000 (for W to mW), we /100000 (for cm-2 to m-2) and we /1000 (for microm to nm)
+    ScalingPARfactor = SatPAR / (sum(Ed)*3600/1000)
     
-    ScalingPARfactor = SatPAR / (sum(Ed)*36)
-    
-    # Eqd = Eqd *SatPAR /(sum(Ed)*3600/1000)
-    #Here we have the underwater light field in Ein.m-2 for a given hour.
-    Eqdirw = Eqdirw * SatPAR / (sum(Ed)*3600/1000)
-    Eqdifw = Eqdifw * SatPAR / (sum(Ed)*3600/1000)
+    # Here we have the underwater light field in Ein.m-2 for a given hour.
+    # Eqd = Eqd * ScalingPARfactor
+    Eqdirw = Eqdirw * ScalingPARfactor
+    Eqdifw = Eqdifw * ScalingPARfactor
     # Eqdw = Eqdirw + Eqdifw
     
-    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, zendR=zendR, zendw=si$zendw))
+    return(list(Eqdifw=Eqdifw, Eqdirw=Eqdirw, zendR=zendR, zendw=zendw, gc=si))
     
 }
 
 
-surface_irr <- function(zendR, nw, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, wsm, ws, pxlvis, Fo) {
+surface_irr <- function(zendR, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, wsm, ws, pxlvis, Fo) {
     
     # Ed(0+,lambda)
     Ed = matrix(0,23,301) # total in mW.m-2.nm-1
@@ -122,11 +137,8 @@ surface_irr <- function(zendR, nw, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, 
     Eqdifw = matrix(0,23,301) # diffus
     # Eqdw = matrix(0,23,301) # total in Einstein.m-2
     
-    zendw = rep(23,0)
-    
     for (i in 1:23)
     {
-        zendw[i] = asin( 1/nw * sin(zendR[i] / rad))
         
         if (zendR[i] < 90.)
         {
@@ -147,16 +159,14 @@ surface_irr <- function(zendR, nw, rad, lam, oza, ag, aw, sco3, p0, wv, rh, am, 
             
             #We divide the direct irradiance by the in-water sun zenith angle to convert from 
             # planar to scalar
-            Eqdirw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edir/cos(zendw[i]),
-                                                              lambda = lam)
+            Eqdirw[i,] = irrm.gc$Edir
             #We divide the diffuse irradiance by 0.833 to convert from 
             # planar to scalar, as in Platt and Sathyendranath 1997, page 2624 last paragraph
-            Eqdifw[i,] = Watt_perm_2_to_microMol_per_m2_per_s(Ed = irrm.gc$Edif/0.83,
-                                                              lambda = lam)
+            Eqdifw[i,] = irrm.gc$Edif
             
         }
     }
     
-    return(list(Ed=Ed, Eqdirw=Eqdirw, Eqdifw=Eqdifw, zendw=zendw))
+    return(list(Ed=Ed, Eqdirw=Eqdirw, Eqdifw=Eqdifw))
     
 }

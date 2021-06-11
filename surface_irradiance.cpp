@@ -3,15 +3,15 @@
 using namespace std;
 using namespace Rcpp;
 
-// [[Rcpp::export]]
-NumericVector Watt_perm_2_to_microMol_per_m2_per_s(NumericVector Ed, NumericVector lambda){
-    double h = 6.626e-34; // in J.s
-    double c = 2.998e8; // in m.s-1
-    double Na = 6.022e23; // Avogadro number
-    NumericVector Np = Ed * lambda * 1e-9/(h*c);
-    NumericVector new_Ed = Np / (Na * 1e-6);
-    return(new_Ed);
-}
+// // [[Rcpp::export]]
+// NumericVector Watt_perm_2_to_microMol_per_m2_per_s(NumericVector Ed, NumericVector lambda){
+//     double h = 6.626e-34; // in J.s
+//     double c = 2.998e8; // in m.s-1
+//     double Na = 6.022e23; // Avogadro number
+//     NumericVector Np = Ed * lambda * 1e-9/(h*c);
+//     NumericVector new_Ed = Np / (Na * 1e-6);
+//     return(new_Ed);
+// }
 
 
 // [[Rcpp::export]]
@@ -257,7 +257,7 @@ List atmodd_v2_c(double rod, double ros, double rad, NumericVector lam, double t
 
 
 // [[Rcpp::export]]
-List surface_irr_c(NumericVector zendR, double nw, double rad, NumericVector lam,
+List surface_irr_c(NumericVector zendR, double rad, NumericVector lam,
                    NumericVector oza, NumericVector ag, NumericVector aw,
                    double sco3, double p0, double wv, double rh, double am,
                    double wsm, double ws, double pxlvis, NumericVector Fo) {
@@ -270,21 +270,17 @@ List surface_irr_c(NumericVector zendR, double nw, double rad, NumericVector lam
     NumericMatrix Eqdifw(23,301); // diffus
     // NumericMatrix Eqdw(23,301); // total in Einstein.m-2
     
-    NumericVector Edir(301);
-    NumericVector Edif(301);
-    
     List irr_gc;
     List irrm_gc;
     List res_sfc;
     double rod;
     double ros;
     
-    NumericVector zendw(23);
+    NumericVector Edir(23);
+    NumericVector Edif(23);
     NumericVector Ed_row(301);
     
     for (int i=0; i < 23; i++) {
-        
-        zendw[i] = asin( 1/nw * sin(zendR[i] / rad));
         
         if (zendR[i] < 90.) {
             
@@ -303,14 +299,10 @@ List surface_irr_c(NumericVector zendR, double nw, double rad, NumericVector lam
             irrm_gc = atmodd_v2_c(rod, ros, rad, lam, zendR[i], oza, ag, aw, sco3,
                                   p0, p0, wv, rh, am, wsm, ws, pxlvis, Fo);
             
-            //We divide the direct irradiance by the in-water sun zenith angle to convert from planar to scalar
             Edir = irrm_gc["Edir"];
-            Edir = Edir/cos(zendw[i]);
-            Eqdirw(i, _) = Watt_perm_2_to_microMol_per_m2_per_s(Edir, lam);
-            //We divide the diffuse irradiance by 0.833 to convert from planar to scalar, as in Platt and Sathyendranath 1997, page 2624 last paragraph
+            Eqdirw(i, _) = Edir;
             Edif = irrm_gc["Edif"];
-            Edif = Edif/0.83;
-            Eqdifw(i, _) = Watt_perm_2_to_microMol_per_m2_per_s(Edif, lam);
+            Eqdifw(i, _) = Edif;
 
         }
     }
@@ -319,7 +311,6 @@ List surface_irr_c(NumericVector zendR, double nw, double rad, NumericVector lam
     Output["Ed"] = Ed;
     Output["Eqdirw"] = Eqdirw;
     Output["Eqdifw"] = Eqdifw;
-    Output["zendw"] = zendw;
     return(Output);
     
 }

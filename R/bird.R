@@ -99,6 +99,9 @@ bird <- function(ZEN,wl) {
     # ***NOTE: do NOT recompute ROS, just use the airmas=1.9 ROS after this
     ZEND = ZEN * 180/pi
     AIRMAS <- 1 / (cos(ZEN) + 0.15*(93.885 - ZEND)^(-1.253))
+    
+    if (!is.finite(AIRMAS)) {return(list(DIRECT=NA,DIFFUSE=NA))}
+    
     if (AIRMAS < 1) {AIRMAS <- 1}
     
     TR <- exp(-AIRMAS / (LAMPTH^4 * ( 115.6406 -1.335/(LAMPTH^2) )))
