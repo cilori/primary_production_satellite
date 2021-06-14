@@ -1,5 +1,5 @@
 ---
-title: "Primary Production model validation"
+title: "BIO Primary Production model v2 - validation"
 output: html_document
 ---
 
@@ -7,8 +7,6 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(ggplot2)
-library(gganimate)
-library(transformr)
 library(oce)
 library(insol)
 library(stringr)
@@ -27,8 +25,6 @@ sourceCpp("underwater_irradiance.cpp")
 sourceCpp("surface_irradiance.cpp")
 ```
 
-
-## BIO Primary Production model - version 2
 
 This is a summary of the required input and the models used in each step of primary production calculation, with validation for each input and model.  
 
@@ -91,183 +87,22 @@ https://satcorps.larc.nasa.gov/jin/coart.html
 - units, conversions
 
 
+<b>Bird:</b>  
 
+- Current surface irradiance model used in the primary production calculations at BIO  
+- Does not include cloud-correction, or corrections for the time of year or reflection losses at the air-sea interface, but these are calculated afterward for comparison to the GC model  
 
+<b>Gregg-Carder (GC):</b>  
 
-```{r}
+- Modified Bird model for use in the maritimes  
+- Higher estimates at shorter wavelengths (compared to Bird)  
+- Lower estimates of diffuse irradiance, and direct irradiance at higher solar zenith angles (i.e. when the sun is lower in the sky) in comparison to Bird  
 
-yearpxl = 2018
+| | |
+|-|-|
+|![](PARmodel_bird-vs-GC_by-sun-altitude.gif)|![](sun_altitudes.gif)|
 
-days <- c(80,172,266,355) # test on equinoxes and solstices
-hours <- seq(6,21,3)
-lats <- c(40, 50, 60, 70, 80)
-
-# use dataframe with expand.grid for all combinations of day/hour/lat
-totest <- expand.grid(days,hours,lats)
-
-
-irrad_df <- data.frame(matrix(nrow=dim(totest)[1]*301*2, ncol=9), stringsAsFactors = FALSE)
-colnames(irrad_df) <- c("Day", "Hour", "Latitude", "Solar_zenith_angle", "Model", "Wavelength", "Direct", "Diffuse", "Total")
-
-bird_wl = seq(0.4,0.7,by=0.005)
-gc_wl = seq(0.4,0.7,by=0.001)
-
-
-for (i in 1:nrow(totest)) {
-    
-    daypxl = totest[i,1]
-    hrpxl = totest[i,2]
-    latipxl = totest[i,3]
-    
-    # zenith angle, in radians (bird requires radians, gc requires degrees)
-    ZEN = (90 - sunAngle(t=str_replace(as.character(doyday(yearpxl,daypxl) + hours(hrpxl)),"AST","UTC"), longitude = 0, latitude = latipxl)$altitude) * pi/180
-    
-    coart_light <- NA
-    
-    # BIRD above-surface irradiance in w.m-2.um-1
-    irr.bird = bird(ZEN, bird_wl)
-    if (length(irr.bird$DIRECT)==1) {
-        bird_dir <- bird_dif <- bird_total <- rep(NA,301)
-    } else {
-        irr.seacor = I0_corr_season(I0_direct = irr.bird$DIRECT,I0_diffuse = irr.bird$DIFFUSE,Day = daypxl)
-        irr.cloudcorr = I0_corr_cloud_BIO(I0_direct = irr.seacor$I0_direct, I0_diffuse = irr.seacor$I0_diffuse, ZEN = ZEN,Cloud = 0)
-        bird_light = I0_corr_refl_loss(I0_direct = irr.cloudcorr$I0_direct, I0_diffuse = irr.cloudcorr$I0_diffuse, ZEN=ZEN)
-        bird_dir <- bird_light$I0_direct
-        bird_dir <- approx(x=bird_wl, y=bird_dir, xout=gc_wl)$y
-        bird_dif <- bird_light$I0_diffuse
-        bird_dif <- approx(x=bird_wl, y=bird_dif, xout=gc_wl)$y
-        bird_total <- bird_dir + bird_dif
-    }
-    
-    # GREGG-CARDER above-surface irradiance in w.m-2.nm-1
-    sco3 = comp_sco3(ylat = latipxl, xlon = 0,jday = daypxl,ro3 = 100)
-    Fo = solar_irr(Fobar,daypxl)
-    gc_light = atmodd_v2_c(rod=0, ros=0, rad=180/pi, lam=gc_wl*1000, theta=ZEN*180/pi, oza=oza, ag=ag, aw=aw, sco3=sco3, p=29.92, p0=29.92, wv=1.5, rh=0.8, am=1, wsm=0, ws=0, vis=40, Fo=Fo)
-    gc_dir <- gc_light$Edir * 1000
-    gc_dif <- gc_light$Edif * 1000
-    gc_total <- gc_light$Ed * 1000
-    
-    
-    inds <- ((301*2)*(i-1)+1):((301*2)*i)
-    irrad_df[inds,] <- data.frame(Day=daypxl, Hour=hrpxl, Latitude=latipxl, Solar_zenith_angle=ZEN*180/pi,
-                                  Model=c(rep("Bird",301), rep("Gregg-Carder",301)),
-                                  Wavelength=c(gc_wl, gc_wl)*1000,
-                                  Direct=c(bird_dir, gc_dir),
-                                  Diffuse=c(bird_dif, gc_dif),
-                                  Total=c(bird_total, gc_total),
-                                  stringsAsFactors = FALSE)
-    
-}
-
-
-
-
-test = irrad_df %>%
-    dplyr::filter(Day==days[1] & Latitude==lats[1]) %>%
-    tidyr::pivot_longer(Direct:Total, names_to="Type", values_to="Irradiance")
-
-p <- ggplot(test) +
-    geom_line(aes(x=Wavelength, y=Irradiance, color=Model)) +
-    theme_bw() +
-    labs(x="Wavelength (nm)", y="Above water surface irradiance (W.m-2.nm-1)") +
-    facet_wrap(~Type) +
-    transition_time(Hour) +
-    labs(title = "Hour: {frame_time}") +
-    ease_aes('linear')
-
-# animate(p)
-
-
-
-
-
-# CHECK ZENITH ANGLES
-
-
-
-
-
-
-
-
-
-
-
-# yearpxl = 2018
-# # daypxl = 120
-# # hrpxl = 14
-# # latipxl = 58
-# 
-# daypxl = 40
-# hrpxl = 8
-# latipxl = 50.
-# 
-# # zenith angle, in radians (bird requires radians, gc requires degrees)
-# ZEN = (90 - sunAngle(t=str_replace(as.character(doyday(yearpxl,daypxl) + hours(hrpxl)),"AST","UTC"), longitude = 0, latitude = latipxl)$altitude) * pi/180
-# 
-# bird_wl = seq(0.4,0.7,by=0.005)
-# gc_wl = seq(0.4,0.7,by=0.001)
-# 
-# coart_light <- NA
-# # BIRD above-surface irradiance in w.m-2.um-1
-# irr.bird = bird(ZEN, bird_wl)
-# irr.seacor = I0_corr_season(I0_direct = irr.bird$DIRECT,I0_diffuse = irr.bird$DIFFUSE,Day = daypxl)
-# irr.cloudcorr = I0_corr_cloud_BIO(I0_direct = irr.seacor$I0_direct, I0_diffuse = irr.seacor$I0_diffuse, ZEN = ZEN,Cloud = 0)
-# bird_light = I0_corr_refl_loss(I0_direct = irr.cloudcorr$I0_direct, I0_diffuse = irr.cloudcorr$I0_diffuse, ZEN=ZEN)
-# # GREGG-CARDER above-surface irradiance in w.m-2.nm-1
-# sco3 = comp_sco3(ylat = latipxl, xlon = 0,jday = daypxl,ro3 = 100)
-# Fo = solar_irr(Fobar,daypxl)
-# gc_light = atmodd_v2_c(rod=0, ros=0, rad=180/pi, lam=gc_wl*1000, theta=ZEN*180/pi, oza=oza, ag=ag, aw=aw, sco3=sco3, p=29.92, p0=29.92, wv=1.5, rh=0.8, am=1, wsm=0, ws=0, vis=40, Fo=Fo)
-# 
-# 
-# # DIRECT RADIANCE COMPARISON
-# bird_dir <- bird_light$I0_direct
-# bird_dir <- approx(x=bird_wl, y=bird_dir, xout=gc_wl)$y
-# gc_dir <- gc_light$Edir * 1000
-# dir <- data.frame(Wavelength=gc_wl*1000,
-#                   COART=coart_light,
-#                   Bird=bird_dir,
-#                   Gregg_Carder=gc_dir,
-#                   stringsAsFactors = FALSE) %>%
-#     tidyr::pivot_longer(COART:Gregg_Carder, names_to="Model", values_to="Irradiance")
-# pdir <- ggplot(dir) +
-#     geom_line(aes(x=Wavelength, y=Irradiance, color=Model)) +
-#     theme_bw() +
-#     labs(x="Wavelength (nm)", y="Above water surface irradiance (W.m-2.nm-1)") +
-#     ggtitle("Direct")
-# 
-# # DIFFUSE RADIANCE COMPARISON
-# bird_dif <- bird_light$I0_diffuse
-# bird_dif <- approx(x=bird_wl, y=bird_dif, xout=gc_wl)$y
-# gc_dif <- gc_light$Edif * 1000
-# dif <- data.frame(Wavelength=gc_wl*1000,
-#                   COART=coart_light,
-#                   Bird=bird_dif,
-#                   Gregg_Carder=gc_dif,
-#                   stringsAsFactors = FALSE) %>%
-#     tidyr::pivot_longer(COART:Gregg_Carder, names_to="Model", values_to="Irradiance")
-# pdif <- ggplot(dif) +
-#     geom_line(aes(x=Wavelength, y=Irradiance, color=Model)) +
-#     theme_bw() +
-#     labs(x="Wavelength (nm)", y="Above water surface irradiance (W.m-2.nm-1)") +
-#     ggtitle("Diffuse")
-# 
-# # COMBINED RADIANCE COMPARISON
-# light <- data.frame(Wavelength=gc_wl*1000,
-#                     COART=coart_light,
-#                     Bird=bird_dir+bird_dif,
-#                     Gregg_Carder=gc_light$Ed * 1000,
-#                   stringsAsFactors = FALSE) %>%
-#     tidyr::pivot_longer(COART:Gregg_Carder, names_to="Model", values_to="Irradiance")
-# plight <- ggplot(light) +
-#     geom_line(aes(x=Wavelength, y=Irradiance, color=Model)) +
-#     theme_bw() +
-#     labs(x="Wavelength (nm)", y="Above water surface irradiance (W.m-2.nm-1)") +
-#     ggtitle("Direct + Diffuse")
-# 
-# pdir + pdif + plight + plot_layout(guides="collect")
-
-```
+Figure XXXXXXXX: Differences between Bird and GC models (left) for each waveband from 400-700nm and sun altitudes between 10 and 80 degrees. On the right, the grey ribbon shows the range of sun altitude over the course of a year for several latitudes across the Northwest Atlantic (NWA) region, to see where and when each model might over/underestimate compared to the other.  
 
 
 
@@ -306,24 +141,19 @@ p <- ggplot(test) +
 
 # REFERENCES
 
-- VGPM: http://sites.science.oregonstate.edu/ocean.productivity/vgpm.model.php
-model description - vgpm
+[Bird, R. E., & Riordan, C. (1986). Simple Solar Spectral Model for Direct and Diffuse Irradiance on Horizontal and Tilted Planes at the Earth's Surface for Cloudless Atmospheres, Journal of Applied Meteorology and Climatology, 25(1), 87-97. Retrieved Jun 14, 2021, from https://journals.ametsoc.org/view/journals/apme/25/1/1520-0450_1986_025_0087_sssmfd_2_0_co_2.xml](https://journals.ametsoc.org/view/journals/apme/25/1/1520-0450_1986_025_0087_sssmfd_2_0_co_2.xml)  
 
--bird
--gc
--91 pp paper
--atbd laval
--dineof
--azcarate 2009 temp.cov.mat.filt.
--bricaud 1981
--devred 2006
+[Gregg, Watson W., Carder, K. L., (1990), A simple spectral solar irradiance model for cloudless maritime atmospheres, Limnology and Oceanography, 35, doi: 10.4319/lo.1990.35.8.1657.](https://aslopubs.onlinelibrary.wiley.com/doi/abs/10.4319/lo.1990.35.8.1657)  
 
+[Platt, Trevor & Caverhill, Carla & Sathyendranath, Shubha. (1991). Basin-scale estimates of oceanic primary production by remote sensing - The North Atlantic. J. Geophys. Res.. 96. 10.1029/91JC01118.](https://www.researchgate.net/publication/4703165_Basin-scale_estimates_of_oceanic_primary_production_by_remote_sensing_-_The_North_Atlantic)  
 
+[Azcarate, Aïda & Barth, Alexander & Sirjacobs, Damien & Lenartz, Fabian & Beckers, Jean-Marie. (2011). Data Interpolating Empirical Orthogonal Functions (DINEOF): a tool for geophysical data analyses. Mediter. Mar. Sci.. 12. 10.12681/mms.64.](https://www.researchgate.net/publication/277096147_Data_Interpolating_Empirical_Orthogonal_Functions_DINEOF_a_tool_for_geophysical_data_analyses)  
 
+[A, Alvera-Azcárate & Barth, Alexander & Sirjacobs, Damien & J.-M, Beckers. (2009). Enhancing temporal correlations in EOF expansions for the reconstruction of missing data using DINEOF. Ocean Science (OS). 5. 10.5194/osd-6-1547-2009.](https://www.researchgate.net/publication/40892450_Enhancing_temporal_correlations_in_EOF_expansions_for_the_reconstruction_of_missing_data_using_DINEOF)  
 
+[Devred, Emmanuel & Sathyendranath, S & Stuart, V & Maass, H & Ulloa, Osvaldo & Platt, T. (2006). A two-component model of phytoplankton absorption in the open ocean: Theory and applications. Journal of Geophysical Research. 111. 10.1029/2005JC002880.](https://www.researchgate.net/publication/229086123_A_two-component_model_of_phytoplankton_absorption_in_the_open_ocean_Theory_and_applications)  
 
-
-
+[VGPM model](http://sites.science.oregonstate.edu/ocean.productivity/vgpm.model.php)  
 
 
 
